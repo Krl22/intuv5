@@ -15,9 +15,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
+import android.net.Uri
 import com.intu.taxi.ui.screens.AccountScreen
+import com.google.firebase.auth.FirebaseAuth
 import com.intu.taxi.ui.screens.HomeScreen
 import com.intu.taxi.ui.screens.TripsScreen
+import com.intu.taxi.ui.screens.VerifyPhoneScreen
 
 @Composable
 fun TaxiApp() {
@@ -58,8 +63,24 @@ fun TaxiApp() {
         ) {
             composable(BottomNavItem.Home.route) { HomeScreen() }
             composable(BottomNavItem.Trips.route) { TripsScreen() }
-            composable(BottomNavItem.Account.route) { AccountScreen(onDebugClick = { navController.navigate("debug") }) }
+            composable(BottomNavItem.Account.route) {
+                AccountScreen(
+                    onDebugClick = { navController.navigate("debug") },
+                    onLogout = { FirebaseAuth.getInstance().signOut() },
+                    onVerifyPhone = { phone ->
+                        val encoded = Uri.encode(phone)
+                        navController.navigate("verifyPhone?phone=$encoded")
+                    }
+                )
+            }
             composable("debug") { com.intu.taxi.ui.screens.DebugScreen() }
+            composable(
+                route = "verifyPhone?phone={phone}",
+                arguments = listOf(navArgument("phone") { type = NavType.StringType; nullable = true; defaultValue = "" })
+            ) { backStackEntry ->
+                val phone = backStackEntry.arguments?.getString("phone").orEmpty()
+                VerifyPhoneScreen(phone = phone, onFinished = { navController.popBackStack() })
+            }
         }
     }
 }
