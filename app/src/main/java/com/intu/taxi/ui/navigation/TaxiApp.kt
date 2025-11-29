@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -23,16 +26,55 @@ import com.google.firebase.auth.FirebaseAuth
 import com.intu.taxi.ui.screens.HomeScreen
 import com.intu.taxi.ui.screens.TripsScreen
 import com.intu.taxi.ui.screens.VerifyPhoneScreen
+import androidx.compose.ui.res.stringResource
+import com.intu.taxi.R
+import com.intu.taxi.ui.screens.DriverOnboardingScreen
+import com.intu.taxi.ui.screens.DriverHomeScreen
+import com.intu.taxi.ui.screens.DriverTopUpScreen
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
+import com.google.firebase.firestore.FirebaseFirestore
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun TaxiApp() {
     val navController = rememberNavController()
+    val uid = FirebaseAuth.getInstance().currentUser?.uid
+    val driverActive = remember { mutableStateOf(false) }
+
+    DisposableEffect(uid) {
+        val reg = if (uid != null) FirebaseFirestore.getInstance().collection("users").document(uid).addSnapshotListener { doc, _ ->
+            val approved = doc?.getBoolean("driverApproved") == true
+            val mode = doc?.getBoolean("driverMode") == true
+            val active = approved && mode
+            driverActive.value = active
+            val currentRoute = navController.currentBackStackEntry?.destination?.route
+            if (active && currentRoute != "driverHome") {
+                navController.navigate("driverHome") {
+                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            } else if (!active && currentRoute == "driverHome") {
+                navController.navigate(BottomNavItem.Home.route) {
+                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+        } else null
+        onDispose { reg?.remove() }
+    }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         bottomBar = {
             val backStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = backStackEntry?.destination
-            NavigationBar(containerColor = MaterialTheme.colorScheme.primaryContainer) {
+            NavigationBar(containerColor = Color(0xFFF3EEF5)) {
                 BottomNavItem.items.forEach { item ->
                     val selected = isDestinationInHierarchy(currentDestination, item.route)
                     NavigationBarItem(
@@ -42,15 +84,23 @@ fun TaxiApp() {
                                 if (item.route == BottomNavItem.Account.route) {
                                     navController.popBackStack("debug", inclusive = true)
                                 }
-                                navController.navigate(item.route) {
+                                val targetRoute = if (item.route == BottomNavItem.Home.route && driverActive.value) "driverHome" else item.route
+                                navController.navigate(targetRoute) {
                                     popUpTo(navController.graph.startDestinationId) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
                             }
                         },
-                        icon = { androidx.compose.material3.Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) }
+                        icon = { androidx.compose.material3.Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
+                        label = { Text(stringResource(item.labelRes), fontWeight = FontWeight.Medium) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF26A69A),
+                            unselectedIconColor = Color(0xFF4B5563),
+                            selectedTextColor = Color(0xFF111827),
+                            unselectedTextColor = Color(0xFF111827),
+                            indicatorColor = Color.Transparent
+                        )
                     )
                 }
             }
@@ -62,6 +112,7 @@ fun TaxiApp() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(BottomNavItem.Home.route) { HomeScreen() }
+            composable("driverHome") { DriverHomeScreen() }
             composable(BottomNavItem.Trips.route) { TripsScreen() }
             composable(BottomNavItem.Account.route) {
                 AccountScreen(
@@ -70,7 +121,9 @@ fun TaxiApp() {
                     onVerifyPhone = { phone ->
                         val encoded = Uri.encode(phone)
                         navController.navigate("verifyPhone?phone=$encoded")
-                    }
+                    },
+                    onStartDriver = { navController.navigate("driverOnboarding") },
+                    onStartTopUp = { navController.navigate("driverTopUp") }
                 )
             }
             composable("debug") { com.intu.taxi.ui.screens.DebugScreen() }
@@ -80,6 +133,12 @@ fun TaxiApp() {
             ) { backStackEntry ->
                 val phone = backStackEntry.arguments?.getString("phone").orEmpty()
                 VerifyPhoneScreen(phone = phone, onFinished = { navController.popBackStack() })
+            }
+            composable("driverOnboarding") {
+                DriverOnboardingScreen(onFinished = { navController.popBackStack() })
+            }
+            composable("driverTopUp") {
+                DriverTopUpScreen(onFinished = { navController.popBackStack() })
             }
         }
     }

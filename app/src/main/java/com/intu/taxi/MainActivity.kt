@@ -1,7 +1,8 @@
 package com.intu.taxi
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
@@ -19,11 +20,27 @@ import com.intu.taxi.ui.screens.LoginScreen
 import com.google.firebase.firestore.FirebaseFirestore
 import com.intu.taxi.ui.screens.OnboardingForm
 import com.intu.taxi.ui.screens.PhoneLoginScreen
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val userSet = prefs.getBoolean("lang_user_set", false)
+        if (!userSet) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+        }
+        // Keep splash briefly until minimal init completes
+        var appReady = false
+        splash.setKeepOnScreenCondition { !appReady }
         enableEdgeToEdge()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
         setContent {
             IntuTheme {
                 val auth = FirebaseAuth.getInstance()
@@ -71,6 +88,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        appReady = true
     }
 }
 @Preview(showBackground = true)
