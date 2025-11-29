@@ -1,7 +1,7 @@
 package com.intu.taxi
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
@@ -19,10 +19,17 @@ import com.intu.taxi.ui.screens.LoginScreen
 import com.google.firebase.firestore.FirebaseFirestore
 import com.intu.taxi.ui.screens.OnboardingForm
 import com.intu.taxi.ui.screens.PhoneLoginScreen
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val userSet = prefs.getBoolean("lang_user_set", false)
+        if (!userSet) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+        }
         enableEdgeToEdge()
         setContent {
             IntuTheme {

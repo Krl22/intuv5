@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.PriceChange
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -72,6 +74,17 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.intu.taxi.R
 import java.util.concurrent.TimeUnit
 import com.google.firebase.storage.FirebaseStorage
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import android.content.Context
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.foundation.clickable
 
 @Composable
 fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVerifyPhone: (String) -> Unit = {}, onStartDriver: () -> Unit = {}) {
@@ -89,7 +102,7 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
     val name = listOf(
         profile?.get("firstName") as? String ?: "",
         profile?.get("lastName") as? String ?: ""
-    ).joinToString(" ").trim().ifEmpty { "Tu cuenta" }
+    ).joinToString(" ").trim().ifEmpty { stringResource(R.string.account_title_fallback) }
     val email = profile?.get("email") as? String ?: ""
     val phone = (profile?.get("fullNumber") as? String) ?: (profile?.get("number") as? String) ?: ""
     val isPhoneLinked = FirebaseAuth.getInstance().currentUser?.phoneNumber?.isNotBlank() == true
@@ -118,7 +131,7 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
                 val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(account.idToken, null)
                 FirebaseAuth.getInstance().currentUser?.linkWithCredential(credential)?.addOnSuccessListener {
                     isGoogleLinked = true
-                    linkStatus = "Google vinculado"
+                    linkStatus = context.getString(R.string.google_linked_success)
                     val uidSafe = FirebaseAuth.getInstance().currentUser?.uid
                     val mail = account.email
                     if (uidSafe != null && mail != null) {
@@ -170,15 +183,63 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
         paymentMethod = method
     }
 
-    val screenBg = Brush.linearGradient(listOf(Color(0xFF08817E), Color(0xFF1E1F47)))
-    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(screenBg)) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind {
+                val teal = Color(0xFF08817E)
+                val indigo = Color(0xFF1E1F47)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(teal, indigo),
+                        center = Offset(0.1f, 0.1f),
+                        radius = size.height * 0.9f
+                    ),
+                    size = Size(width = size.width, height = size.height)
+                )
+                withTransform({
+                    scale(scaleX = 1.6f, scaleY = 1.0f, pivot = Offset.Zero)
+                }) {
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.White.copy(alpha = 1.0f),
+                                0.70f to Color.White.copy(alpha = 1.0f),
+                                0.75f to Color.White.copy(alpha = 0.95f),
+                                0.80f to Color.White.copy(alpha = 0.85f),
+                                0.85f to Color.White.copy(alpha = 0.70f),
+                                0.90f to Color.White.copy(alpha = 0.45f),
+                                0.95f to Color.White.copy(alpha = 0.25f),
+                                1.00f to Color.Transparent
+                            ),
+                            center = Offset(0f, 0f),
+                            radius = kotlin.math.max(size.width, size.height)
+                        ),
+                        size = Size(width = size.width, height = size.height),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+            }
+    ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { ClientHeader(name, photoUrl, onChangePhoto = { imagePicker.launch("image/*") }) }
-            item { CountrySelector(country = country, onSelect = { saveCountry(it) }) }
+            item {
+                ClientHeader(
+                    title = name,
+                    photoUrl = photoUrl,
+                    onChangePhoto = { imagePicker.launch("image/*") },
+                    showDriverToggle = ((profile?.get("driverApproved") as? Boolean) == true),
+                    driverMode = ((profile?.get("driverMode") as? Boolean) == true),
+                    onToggleDriver = { enabled ->
+                        val u2 = uid
+                        if (u2 != null) FirebaseFirestore.getInstance().collection("users").document(u2).set(mapOf("driverMode" to enabled), SetOptions.merge())
+                    }
+                )
+            }
+            
             item {
                 ContactCard(
                     email = email,
@@ -198,9 +259,7 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
                 )
             }
             item { PaymentCard(country = country, method = paymentMethod, onChange = { savePayment(it) }) }
-            val driverApproved = (profile?.get("driverApproved") as? Boolean) == true
-            val driverMode = (profile?.get("driverMode") as? Boolean) == true
-            if (driverApproved && driverMode) {
+            if (((profile?.get("driverApproved") as? Boolean) == true) && ((profile?.get("driverMode") as? Boolean) == true)) {
                 val driverData = profile?.get("driver") as? Map<String, Any> ?: emptyMap()
                 val vehiclePhoto = (driverData["vehiclePhotoUrl"] as? String) ?: ""
                 val vehicleType = (driverData["vehicleType"] as? String) ?: ""
@@ -213,12 +272,14 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
                 item { DriverRecentTripsCard() }
             }
             item { SavedPlacesCard() }
+            item { CountrySelector(country = country, onSelect = { saveCountry(it) }) }
+            item { LanguageSelector() }
             item { SupportPrivacyCard(onDebugClick, onLogout) }
             item {
                 DriverSection(
                     uid = uid,
-                    approved = driverApproved,
-                    driverMode = driverMode,
+                    approved = ((profile?.get("driverApproved") as? Boolean) == true),
+                    driverMode = ((profile?.get("driverMode") as? Boolean) == true),
                     submitted = profile?.get("driver") != null,
                     onStartDriver = onStartDriver,
                     onToggleMode = { enabled ->
@@ -232,22 +293,43 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
 }
 
 @Composable
-private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> Unit) {
-    val gradient = Brush.horizontalGradient(listOf(Color(0xFF08817E), Color(0xFF1E1F47)))
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().background(gradient).padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (photoUrl.isNotBlank()) {
-                AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(56.dp).clip(CircleShape))
-            } else {
-                Icon(
-                    Icons.Filled.Person,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(56.dp).clip(CircleShape)
-                )
+private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> Unit, showDriverToggle: Boolean = false, driverMode: Boolean = false, onToggleDriver: (Boolean) -> Unit = {}) {
+    val gradient = Brush.horizontalGradient(listOf(Color(0xFF0D9488), Color(0xFF0F172A)))
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().background(gradient)) {
+            if (showDriverToggle) {
+                Row(modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "Modo conductor", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.size(8.dp))
+                    androidx.compose.material3.Switch(checked = driverMode, onCheckedChange = onToggleDriver)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(Color(0xFF0D9488), Color(0xFF22D3EE))
+                        )
+                    )
+                    .clickable { onChangePhoto() },
+                contentAlignment = Alignment.Center
+            ) {
+                if (photoUrl.isNotBlank()) {
+                    AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(56.dp).clip(CircleShape))
+                } else {
+                    Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                }
             }
             Spacer(Modifier.size(16.dp))
             Column {
@@ -255,28 +337,55 @@ private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> U
                     title,
                     style = MaterialTheme.typography.titleLarge.copy(
                         color = Color.White,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 )
                 Text(
-                    "Cliente desde 2023",
+                    stringResource(R.string.client_since),
                     style = MaterialTheme.typography.bodyMedium.copy(color = Color.White.copy(alpha = 0.85f))
                 )
             }
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = { onChangePhoto() }) { Text("Cambiar foto") }
+            }
         }
     }
 }
 
 @Composable
 private fun CountrySelector(country: String, onSelect: (String) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("País", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.country_label), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = { onSelect("peru") }, enabled = country != "peru") { Text("Perú") }
-            OutlinedButton(onClick = { onSelect("usa") }, enabled = country != "usa") { Text("USA") }
+            OutlinedButton(onClick = { onSelect("peru") }, enabled = country != "peru") { Text(stringResource(R.string.country_peru)) }
+            OutlinedButton(onClick = { onSelect("usa") }, enabled = country != "usa") { Text(stringResource(R.string.country_usa)) }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSelector() {
+    val ctx = LocalContext.current
+    val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.language_label), style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            OutlinedButton(onClick = {
+                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("es"))
+                prefs.edit().putBoolean("lang_user_set", true).apply()
+                (ctx as? Activity)?.recreate()
+            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text(stringResource(R.string.language_es)) }
+            OutlinedButton(onClick = {
+                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
+                prefs.edit().putBoolean("lang_user_set", true).apply()
+                (ctx as? Activity)?.recreate()
+            }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A), contentColor = Color.White)) { Text(stringResource(R.string.language_en)) }
         }
     }
 }
@@ -291,25 +400,31 @@ private fun ContactCard(
     onLinkGoogle: () -> Unit,
     linkStatus: String
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text("Contacto", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.contact_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             ListItem(
-                headlineContent = { Text(email.ifEmpty { "Sin email" }) },
-                leadingContent = { Icon(Icons.Filled.Email, contentDescription = null, tint = Color(0xFF1E1F47)) },
+                headlineContent = { Text(email.ifEmpty { stringResource(R.string.no_email) }) },
+                leadingContent = { Icon(Icons.Filled.Email, contentDescription = null, tint = Color(0xFF0F172A)) },
                 trailingContent = {
                     if (!isGoogleLinked) {
-                        OutlinedButton(onClick = onLinkGoogle) { Text("Vincular Google") }
+                        OutlinedButton(onClick = onLinkGoogle) { Text(stringResource(R.string.link_google)) }
                     }
                 }
             )
             ListItem(
-                headlineContent = { Text(phone.ifEmpty { "Sin número" }) },
-                leadingContent = { Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF08817E)) },
+                headlineContent = { Text(phone.ifEmpty { stringResource(R.string.no_phone) }) },
+                leadingContent = { Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF0D9488)) },
+    
                 trailingContent = {
                     if (!isPhoneLinked && phone.isNotEmpty()) {
-                        OutlinedButton(onClick = { onVerifyPhone(phone) }) { Text("Verificar") }
+                        OutlinedButton(onClick = { onVerifyPhone(phone) }) { Text(stringResource(R.string.verify)) }
                     }
                 }
             )
@@ -320,27 +435,32 @@ private fun ContactCard(
 
 @Composable
 private fun PaymentCard(country: String, method: String, onChange: (String) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Pago", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.payment_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             if (country == "peru") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onChange("yape_plin") }, enabled = method != "yape_plin") { Text("Yape/Plin") }
-                    OutlinedButton(onClick = { onChange("efectivo") }, enabled = method != "efectivo") { Text("Efectivo") }
+                    Button(onClick = { onChange("yape_plin") }, enabled = method != "yape_plin", colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text(stringResource(R.string.method_yape_plin)) }
+                    OutlinedButton(onClick = { onChange("efectivo") }, enabled = method != "efectivo") { Text(stringResource(R.string.method_cash)) }
                 }
                 Text(
                     when (method) {
-                        "yape_plin" -> "Método: Yape/Plin"
-                        else -> "Método: Efectivo"
+                        "yape_plin" -> stringResource(R.string.method_selected_yape_plin)
+                        else -> stringResource(R.string.method_selected_cash)
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
-                ListItem(headlineContent = { Text("Visa •••• 1234 (predeterminado)") }, leadingContent = { Icon(Icons.Filled.CreditCard, contentDescription = null) })
+                ListItem(headlineContent = { Text(stringResource(R.string.method_card_default)) }, leadingContent = { Icon(Icons.Filled.CreditCard, contentDescription = null) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {}) { Text("Gestionar métodos") }
-                    OutlinedButton(onClick = {}) { Text("Agregar tarjeta") }
+                    Button(onClick = {}, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text(stringResource(R.string.manage_methods)) }
+                    OutlinedButton(onClick = {}) { Text(stringResource(R.string.add_card)) }
                 }
             }
         }
@@ -349,33 +469,45 @@ private fun PaymentCard(country: String, method: String, onChange: (String) -> U
 
 @Composable
 private fun SavedPlacesCard() {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text("Lugares guardados", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.saved_places_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            ListItem(headlineContent = { Text("Casa: Av. Primavera 123") }, leadingContent = { Icon(Icons.Filled.Home, contentDescription = null) })
-            ListItem(headlineContent = { Text("Trabajo: Calle Sol 456") }, leadingContent = { Icon(Icons.Filled.Work, contentDescription = null) })
-            OutlinedButton(onClick = {}) { Text("Administrar lugares") }
+            ListItem(headlineContent = { Text(stringResource(R.string.home_place)) }, leadingContent = { Icon(Icons.Filled.Home, contentDescription = null, tint = Color(0xFF0D9488)) })
+            ListItem(headlineContent = { Text(stringResource(R.string.work_place)) }, leadingContent = { Icon(Icons.Filled.Work, contentDescription = null, tint = Color(0xFF0F172A)) })
+            OutlinedButton(onClick = {}) { Text(stringResource(R.string.manage_places)) }
         }
     }
 }
 
 @Composable
 private fun VehicleCard(photoUrl: String, type: String, brand: String, model: String, year: String, plate: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(8.dp)
+    ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Datos del vehículo", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.vehicle_data_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (photoUrl.isNotBlank()) {
                     AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(72.dp).clip(CircleShape))
                 } else {
-                    Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF08817E), modifier = Modifier.size(48.dp))
+                    Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488), modifier = Modifier.size(48.dp))
                 }
                 Spacer(Modifier.size(16.dp))
                 Column {
                     Text(listOf(type, brand, model).filter { it.isNotBlank() }.joinToString(" "), style = MaterialTheme.typography.titleSmall)
-                    Text(listOf("Año $year", "Placa $plate").filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text(listOf(
+                        (if (year.isNotBlank()) stringResource(R.string.year_label_prefix) + year else ""),
+                        (if (plate.isNotBlank()) stringResource(R.string.plate_label_prefix) + plate else "")
+                    ).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
             }
         }
@@ -384,35 +516,35 @@ private fun VehicleCard(photoUrl: String, type: String, brand: String, model: St
 
 @Composable
 private fun DriverStatsCard() {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Ingresos y viajes", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.earnings_trips_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.TrendingUp, contentDescription = null, tint = Color(0xFF1E1F47))
+                Icon(Icons.Filled.TrendingUp, contentDescription = null, tint = Color(0xFF0F172A))
                 Spacer(Modifier.size(8.dp))
-                Text("Hoy: S/ 120.00 · 6 viajes", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.today_summary), style = MaterialTheme.typography.bodyMedium)
             }
-            LinearProgressIndicator(progress = 0.6f, color = Color(0xFF08817E))
+            LinearProgressIndicator(progress = 0.6f, color = Color(0xFF0D9488))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.PriceChange, contentDescription = null, tint = Color(0xFF08817E))
+                Icon(Icons.Filled.PriceChange, contentDescription = null, tint = Color(0xFF0D9488))
                 Spacer(Modifier.size(8.dp))
-                Text("Semana: S/ 840.00 · 42 viajes", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.week_summary), style = MaterialTheme.typography.bodyMedium)
             }
-            LinearProgressIndicator(progress = 0.42f, color = Color(0xFF1E1F47))
+            LinearProgressIndicator(progress = 0.42f, color = Color(0xFF0F172A))
         }
     }
 }
 
 @Composable
 private fun DriverRecentTripsCard() {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Últimos viajes", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.recent_trips_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider()
-            ListItem(headlineContent = { Text("12:10 · Centro → Aeropuerto · S/ 45.00") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF08817E)) })
-            ListItem(headlineContent = { Text("10:35 · Universidad → Mall · S/ 23.50") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF08817E)) })
-            ListItem(headlineContent = { Text("09:05 · Casa → Oficina · S/ 18.00") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF08817E)) })
+            ListItem(headlineContent = { Text("12:10 · Centro → Aeropuerto · S/ 45.00") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488)) })
+            ListItem(headlineContent = { Text("10:35 · Universidad → Mall · S/ 23.50") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488)) })
+            ListItem(headlineContent = { Text("09:05 · Casa → Oficina · S/ 18.00") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488)) })
         }
     }
 }
@@ -432,13 +564,13 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
 
     Card {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Vincular número")
+            Text(stringResource(R.string.link_phone_label))
             ExposedDropdownMenuBox(expanded = countryExpanded.value, onExpandedChange = { countryExpanded.value = !countryExpanded.value }) {
                 TextField(
                     value = countryCode,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Código") },
+                    label = { Text(stringResource(R.string.country_code_label)) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = countryExpanded.value) },
                     colors = ExposedDropdownMenuDefaults.textFieldColors(),
                     modifier = Modifier.menuAnchor()
@@ -452,15 +584,15 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                     }
                 }
             }
-            OutlinedTextField(value = number, onValueChange = { number = it.filter { ch -> ch.isDigit() } }, label = { Text("Número") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = code, onValueChange = { code = it.filter { ch -> ch.isDigit() } }, label = { Text("Código SMS") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = number, onValueChange = { number = it.filter { ch -> ch.isDigit() } }, label = { Text(stringResource(R.string.phone_number_label)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = code, onValueChange = { code = it.filter { ch -> ch.isDigit() } }, label = { Text(stringResource(R.string.sms_code_label)) }, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     val full = countryCode + number
                     val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
                         override fun onVerificationCompleted(credential: PhoneAuthCredential) {
                             auth.currentUser?.linkWithCredential(credential)?.addOnSuccessListener {
-                                status = "Número vinculado"
+                                status = context.getString(R.string.phone_linked_success)
                                 val uidSafe = uid ?: return@addOnSuccessListener
                                 FirebaseFirestore.getInstance().collection("users").document(uidSafe)
                                     .set(
@@ -473,7 +605,7 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                             }
                         }
                         override fun onVerificationFailed(e: FirebaseException) { status = "Error: ${e.message ?: "verificación"}" }
-                        override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId = vid; status = "Código enviado" }
+                        override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId = vid; status = context.getString(R.string.code_sent) }
                     }
                     val options = PhoneAuthOptions.newBuilder(auth)
                         .setPhoneNumber(full)
@@ -482,13 +614,13 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                         .setCallbacks(callbacks)
                         .build()
                     PhoneAuthProvider.verifyPhoneNumber(options)
-                }) { Text("Enviar código") }
+                }) { Text(stringResource(R.string.send_code)) }
                 Button(onClick = {
                     val vid = verificationId
                     if (vid != null) {
                         val cred = PhoneAuthProvider.getCredential(vid, code)
                         auth.currentUser?.linkWithCredential(cred)?.addOnSuccessListener {
-                            status = "Número vinculado"
+                            status = context.getString(R.string.phone_linked_success)
                             val full = countryCode + number
                             val uidSafe = uid ?: return@addOnSuccessListener
                             FirebaseFirestore.getInstance().collection("users").document(uidSafe)
@@ -501,7 +633,7 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                                 )
                         }
                     }
-                }) { Text("Verificar y vincular") }
+                }) { Text(stringResource(R.string.verify_and_link)) }
             }
             if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall)
         }
@@ -510,19 +642,19 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
 
 @Composable
 private fun SupportPrivacyCard(onDebugClick: () -> Unit, onLogout: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ayuda y privacidad", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.support_privacy_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider()
-            OutlinedButton(onClick = {}) { Text("Centro de ayuda") }
-            OutlinedButton(onClick = {}) { Text("Privacidad") }
+            OutlinedButton(onClick = {}) { Text(stringResource(R.string.help_center)) }
+            OutlinedButton(onClick = {}) { Text(stringResource(R.string.privacy)) }
             OutlinedButton(onClick = onDebugClick) {
                 Icon(Icons.Filled.BugReport, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text("Debug")
+                Text(stringResource(R.string.debug))
             }
-            Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                Text("Cerrar sesión")
+            Button(onClick = onLogout, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A), contentColor = Color.White)) {
+                Text(stringResource(R.string.logout))
             }
         }
     }
@@ -537,21 +669,21 @@ private fun DriverSection(
     onStartDriver: () -> Unit,
     onToggleMode: (Boolean) -> Unit
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Conduce y gana", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.drive_and_earn_section), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider()
             if (!approved) {
                 if (submitted) {
-                    OutlinedButton(onClick = {}, enabled = false) { Text("Solicitud en revisión") }
-                    Text("Tu solicitud está siendo revisada", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.driver_review_pending)) }
+                    Text(stringResource(R.string.driver_review_help), style = MaterialTheme.typography.bodySmall)
                 } else {
-                    Button(onClick = onStartDriver, modifier = Modifier.fillMaxWidth()) { Text("Ganar con Intu") }
-                    Text("Completa datos de vehículo y licencia", style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = onStartDriver, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text(stringResource(R.string.gain_with_intu)) }
+                    Text(stringResource(R.string.driver_complete_data), style = MaterialTheme.typography.bodySmall)
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Modo conductor")
+                    Text(stringResource(R.string.driver_mode_label))
                     Spacer(Modifier.weight(1f))
                     androidx.compose.material3.Switch(checked = driverMode, onCheckedChange = onToggleMode)
                 }

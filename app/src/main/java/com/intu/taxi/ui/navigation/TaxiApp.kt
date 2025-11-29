@@ -23,11 +23,45 @@ import com.google.firebase.auth.FirebaseAuth
 import com.intu.taxi.ui.screens.HomeScreen
 import com.intu.taxi.ui.screens.TripsScreen
 import com.intu.taxi.ui.screens.VerifyPhoneScreen
+import androidx.compose.ui.res.stringResource
+import com.intu.taxi.R
 import com.intu.taxi.ui.screens.DriverOnboardingScreen
+import com.intu.taxi.ui.screens.DriverHomeScreen
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun TaxiApp() {
     val navController = rememberNavController()
+    val uid = FirebaseAuth.getInstance().currentUser?.uid
+    val driverActive = remember { mutableStateOf(false) }
+
+    DisposableEffect(uid) {
+        val reg = if (uid != null) FirebaseFirestore.getInstance().collection("users").document(uid).addSnapshotListener { doc, _ ->
+            val approved = doc?.getBoolean("driverApproved") == true
+            val mode = doc?.getBoolean("driverMode") == true
+            val active = approved && mode
+            driverActive.value = active
+            val currentRoute = navController.currentBackStackEntry?.destination?.route
+            if (active && currentRoute != "driverHome") {
+                navController.navigate("driverHome") {
+                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            } else if (!active && currentRoute == "driverHome") {
+                navController.navigate(BottomNavItem.Home.route) {
+                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+        } else null
+        onDispose { reg?.remove() }
+    }
 
     Scaffold(
         bottomBar = {
@@ -43,15 +77,16 @@ fun TaxiApp() {
                                 if (item.route == BottomNavItem.Account.route) {
                                     navController.popBackStack("debug", inclusive = true)
                                 }
-                                navController.navigate(item.route) {
+                                val targetRoute = if (item.route == BottomNavItem.Home.route && driverActive.value) "driverHome" else item.route
+                                navController.navigate(targetRoute) {
                                     popUpTo(navController.graph.startDestinationId) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
                             }
                         },
-                        icon = { androidx.compose.material3.Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) }
+                        icon = { androidx.compose.material3.Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
+                        label = { Text(stringResource(item.labelRes)) }
                     )
                 }
             }
@@ -63,6 +98,7 @@ fun TaxiApp() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(BottomNavItem.Home.route) { HomeScreen() }
+            composable("driverHome") { DriverHomeScreen() }
             composable(BottomNavItem.Trips.route) { TripsScreen() }
             composable(BottomNavItem.Account.route) {
                 AccountScreen(

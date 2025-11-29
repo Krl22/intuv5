@@ -1,3 +1,82 @@
 <resources>
-    <string name="app_name">Intu</string>
+    <string name="app_name">Intu Taxi</string>
+    <string name="country_label">Country</string>
+    <string name="country_peru">Peru</string>
+    <string name="country_usa">USA</string>
+
+    <string name="language_label">Language</string>
+    <string name="language_es">Spanish</string>
+    <string name="language_en">English</string>
+
+    <string name="contact_label">Contact</string>
+    <string name="link_google">Link Google</string>
+    <string name="no_email">No email</string>
+    <string name="phone_label">Phone</string>
+    <string name="no_phone">No number</string>
+    <string name="verify">Verify</string>
+
+    <string name="payment_label">Payment</string>
+    <string name="method_yape_plin">Yape/Plin</string>
+    <string name="method_cash">Cash</string>
+    <string name="method_card_default">Visa •••• 1234 (default)</string>
+    <string name="manage_methods">Manage methods</string>
+    <string name="add_card">Add card</string>
+    <string name="method_selected_yape_plin">Method: Yape/Plin</string>
+    <string name="method_selected_cash">Method: Cash</string>
+
+    <string name="saved_places_label">Saved places</string>
+    <string name="home_place">Home: Av. Primavera 123</string>
+    <string name="work_place">Work: Calle Sol 456</string>
+    <string name="manage_places">Manage places</string>
+
+    <string name="support_privacy_label">Help and privacy</string>
+    <string name="help_center">Help Center</string>
+    <string name="privacy">Privacy</string>
+    <string name="debug">Debug</string>
+    <string name="logout">Sign out</string>
+
+    <string name="vehicle_data_label">Vehicle details</string>
+    <string name="year_label_prefix">Year </string>
+    <string name="plate_label_prefix">Plate </string>
+
+    <string name="earnings_trips_label">Earnings and trips</string>
+    <string name="today_summary">Today: S/ 120.00 · 6 trips</string>
+    <string name="week_summary">Week: S/ 840.00 · 42 trips</string>
+    <string name="recent_trips_label">Recent trips</string>
+
+    <string name="gain_with_intu">Earn with Intu</string>
+    <string name="driver_review_pending">Application under review</string>
+    <string name="driver_review_help">Your application is being reviewed</string>
+    <string name="driver_complete_data">Complete vehicle and license information</string>
+    <string name="driver_mode_label">Driver mode</string>
+
+    <string name="change_photo">Change photo</string>
+    <string name="client_since">Client since 2023</string>
+
+    <string name="my_trips">My Trips</string>
+    <string name="my_services">My Services</string>
+
+    <string name="services_tab">Services</string>
+    <string name="dashboard_tab">Dashboard</string>
+
+    <string name="income_day">Daily earnings</string>
+    <string name="account_title_fallback">Your account</string>
+    <string name="google_linked_success">Google linked</string>
+    <string name="link_phone_label">Link phone</string>
+    <string name="country_code_label">Code</string>
+    <string name="phone_number_label">Number</string>
+    <string name="sms_code_label">SMS code</string>
+    <string name="send_code">Send code</string>
+    <string name="verify_and_link">Verify and link</string>
+    <string name="phone_linked_success">Phone linked</string>
+    <string name="code_sent">Code sent</string>
+    <string name="drive_and_earn_section">Drive and earn</string>
+    <string name="services_this_month">12 services this month</string>
+    <string name="trips_this_month">3 trips this month</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_trips">Trips</string>
+    <string name="nav_account">Account</string>
+    <string name="quick_home">Casa</string>
+    <string name="quick_work">Trabajo</string>
+    <string name="quick_marker">Marcador</string>
 </resources>
