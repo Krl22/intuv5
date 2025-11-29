@@ -23,6 +23,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.intu.taxi.ui.screens.HomeScreen
 import com.intu.taxi.ui.screens.TripsScreen
 import com.intu.taxi.ui.screens.VerifyPhoneScreen
+import com.intu.taxi.ui.screens.DriverOnboardingScreen
 
 @Composable
 fun TaxiApp() {
@@ -70,7 +71,8 @@ fun TaxiApp() {
                     onVerifyPhone = { phone ->
                         val encoded = Uri.encode(phone)
                         navController.navigate("verifyPhone?phone=$encoded")
-                    }
+                    },
+                    onStartDriver = { navController.navigate("driverOnboarding") }
                 )
             }
             composable("debug") { com.intu.taxi.ui.screens.DebugScreen() }
@@ -80,6 +82,9 @@ fun TaxiApp() {
             ) { backStackEntry ->
                 val phone = backStackEntry.arguments?.getString("phone").orEmpty()
                 VerifyPhoneScreen(phone = phone, onFinished = { navController.popBackStack() })
+            }
+            composable("driverOnboarding") {
+                DriverOnboardingScreen(onFinished = { navController.popBackStack() })
             }
         }
     }
