@@ -6,9 +6,9 @@
     <!-- Splash theme for Android 12+ and fallback for pre-12 -->
     <style name="Theme.Intu.Splash" parent="Theme.AppCompat.Light.NoActionBar">
         <!-- Android 12+ SplashScreen API attributes -->
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo_animated</item>
         <item name="windowSplashScreenBackground">@drawable/splash_background</item>
-        <item name="windowSplashScreenAnimationDuration">200</item>
+        <item name="windowSplashScreenAnimationDuration">600</item>
         <item name="postSplashScreenTheme">@style/Theme.Intu</item>
 
         <!-- Fallback background for pre-12 -->

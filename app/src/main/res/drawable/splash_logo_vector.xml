@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <group
+        android:name="pulseGroup"
+        android:pivotX="60"
+        android:pivotY="60"
+        android:scaleX="1"
+        android:scaleY="1">
+        <path
+            android:fillColor="#26A69A"
+            android:pathData="M12,30 Q12,12 30,12 L90,12 Q108,12 108,30 L108,90 Q108,108 90,108 L30,108 Q12,108 12,90 Z"/>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M60,36 A12,12 0 1,0 60,60 A12,12 0 1,0 60,36 Z"/>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M52,66 L68,66 L68,90 L52,90 Z"/>
+    </group>
+</vector>

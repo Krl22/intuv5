@@ -24,6 +24,9 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.view.animation.AccelerateDecelerateInterpolator
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +44,23 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
+        splash.setOnExitAnimationListener { provider ->
+            val iconView = provider.iconView
+            val scaleX = ObjectAnimator.ofFloat(iconView, android.view.View.SCALE_X, 1f, 1.2f)
+            val scaleY = ObjectAnimator.ofFloat(iconView, android.view.View.SCALE_Y, 1f, 1.2f)
+            val alpha = ObjectAnimator.ofFloat(iconView, android.view.View.ALPHA, 1f, 0f)
+            AnimatorSet().apply {
+                playTogether(scaleX, scaleY, alpha)
+                duration = 450
+                interpolator = AccelerateDecelerateInterpolator()
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        provider.remove()
+                    }
+                })
+                start()
+            }
+        }
         setContent {
             IntuTheme {
                 val auth = FirebaseAuth.getInstance()
