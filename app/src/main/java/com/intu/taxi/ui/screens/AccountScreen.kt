@@ -35,6 +35,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+ 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -87,7 +88,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.clickable
 
 @Composable
-fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVerifyPhone: (String) -> Unit = {}, onStartDriver: () -> Unit = {}) {
+fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVerifyPhone: (String) -> Unit = {}, onStartDriver: () -> Unit = {}, onStartTopUp: () -> Unit = {}) {
     val uid = FirebaseAuth.getInstance().currentUser?.uid
     var profile by remember { mutableStateOf<Map<String, Any>?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -267,6 +268,8 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
                 val vehicleModel = (driverData["vehicleModel"] as? String) ?: ""
                 val vehicleYear = (driverData["vehicleYear"] as? String) ?: ""
                 val vehiclePlate = (driverData["vehiclePlate"] as? String) ?: ""
+                val balance = (profile?.get("balance") as? Number)?.toDouble() ?: 0.0
+                item { DriverBalanceCard(balance = balance, onRecharge = onStartTopUp) }
                 item { VehicleCard(photoUrl = vehiclePhoto, type = vehicleType, brand = vehicleBrand, model = vehicleModel, year = vehicleYear, plate = vehiclePlate) }
                 item { DriverStatsCard() }
                 item { DriverRecentTripsCard() }
@@ -532,6 +535,19 @@ private fun DriverStatsCard() {
                 Text(stringResource(R.string.week_summary), style = MaterialTheme.typography.bodyMedium)
             }
             LinearProgressIndicator(progress = 0.42f, color = Color(0xFF0F172A))
+        }
+    }
+}
+
+@Composable
+private fun DriverBalanceCard(balance: Double, onRecharge: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Saldo", style = MaterialTheme.typography.titleMedium)
+                Text("S/ %.2f".format(balance), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
+            Button(onClick = onRecharge, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text("Recargar saldo") }
         }
     }
 }

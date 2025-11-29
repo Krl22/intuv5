@@ -81,6 +81,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.statusBarsPadding
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -148,7 +149,7 @@ fun HomeScreen() {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.6f)
+                .fillMaxHeight(0.55f)
                 .drawBehind {
                     val teal = Color(0xFF08817E)
                     val indigo = Color(0xFF1E1F47)
@@ -195,7 +196,8 @@ fun HomeScreen() {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 45.dp, start = 16.dp, end = 16.dp),
+                        .statusBarsPadding()
+                        .padding(top = 20.dp, start = 16.dp, end = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -205,7 +207,7 @@ fun HomeScreen() {
                         fontWeight = FontWeight.Bold,
                         fontSize = 32.sp
                     )
-                    Spacer(modifier = Modifier.height(30.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
                     Text(
                         text = if (firstName.isNotBlank()) "¡Hola $firstName!" else "¡Hola!",
                         color = Color.White,
@@ -219,7 +221,7 @@ fun HomeScreen() {
                         onFocusChange = { focused -> isSearchFocused = focused },
                         modifier = Modifier.padding(horizontal = 8.dp)
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(25.dp))
                     // Dropdown de sugerencias bajo el campo de búsqueda
                     val suggestions = listOf(
                         Pair("Aeropuerto Jorge Chávez", Point.fromLngLat(-77.1144, -12.0219)),

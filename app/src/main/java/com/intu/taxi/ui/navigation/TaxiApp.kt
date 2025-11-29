@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -27,11 +30,14 @@ import androidx.compose.ui.res.stringResource
 import com.intu.taxi.R
 import com.intu.taxi.ui.screens.DriverOnboardingScreen
 import com.intu.taxi.ui.screens.DriverHomeScreen
+import com.intu.taxi.ui.screens.DriverTopUpScreen
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.DisposableEffect
 import com.google.firebase.firestore.FirebaseFirestore
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun TaxiApp() {
@@ -64,10 +70,11 @@ fun TaxiApp() {
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         bottomBar = {
             val backStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = backStackEntry?.destination
-            NavigationBar(containerColor = MaterialTheme.colorScheme.primaryContainer) {
+            NavigationBar(containerColor = Color(0xFFF3EEF5)) {
                 BottomNavItem.items.forEach { item ->
                     val selected = isDestinationInHierarchy(currentDestination, item.route)
                     NavigationBarItem(
@@ -86,7 +93,14 @@ fun TaxiApp() {
                             }
                         },
                         icon = { androidx.compose.material3.Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
-                        label = { Text(stringResource(item.labelRes)) }
+                        label = { Text(stringResource(item.labelRes), fontWeight = FontWeight.Medium) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF26A69A),
+                            unselectedIconColor = Color(0xFF4B5563),
+                            selectedTextColor = Color(0xFF111827),
+                            unselectedTextColor = Color(0xFF111827),
+                            indicatorColor = Color.Transparent
+                        )
                     )
                 }
             }
@@ -108,7 +122,8 @@ fun TaxiApp() {
                         val encoded = Uri.encode(phone)
                         navController.navigate("verifyPhone?phone=$encoded")
                     },
-                    onStartDriver = { navController.navigate("driverOnboarding") }
+                    onStartDriver = { navController.navigate("driverOnboarding") },
+                    onStartTopUp = { navController.navigate("driverTopUp") }
                 )
             }
             composable("debug") { com.intu.taxi.ui.screens.DebugScreen() }
@@ -121,6 +136,9 @@ fun TaxiApp() {
             }
             composable("driverOnboarding") {
                 DriverOnboardingScreen(onFinished = { navController.popBackStack() })
+            }
+            composable("driverTopUp") {
+                DriverTopUpScreen(onFinished = { navController.popBackStack() })
             }
         }
     }
