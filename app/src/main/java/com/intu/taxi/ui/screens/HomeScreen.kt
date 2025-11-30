@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -82,6 +82,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.statusBarsPadding
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URL
+import java.net.URLEncoder
+import org.json.JSONObject
+import org.json.JSONArray
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -97,8 +104,9 @@ fun HomeScreen() {
         }
     }
 
-    // Hide ScaleBar overlay (top-left)
-    mapView.scalebar.enabled = false
+    LaunchedEffect(mapView) {
+        mapView.scalebar.enabled = false
+    }
 
     // Location Component: enable if permission granted
     val grantedFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -115,12 +123,18 @@ fun HomeScreen() {
         }
     }
 
-    if (!grantedFine && !grantedCoarse) {
-        SideEffect {
-            locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    LaunchedEffect(Unit) {
+        if (!grantedFine && !grantedCoarse) {
+            locationPermissionLauncher.launch(arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ))
         }
-    } else {
-        mapView.location.updateSettings { enabled = true }
+    }
+    LaunchedEffect(grantedFine, grantedCoarse) {
+        if (grantedFine || grantedCoarse) {
+            mapView.location.updateSettings { enabled = true }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -133,6 +147,8 @@ fun HomeScreen() {
         var searchQuery by remember { mutableStateOf("") }
         var isSearchFocused by remember { mutableStateOf(false) }
         var firstName by remember { mutableStateOf("") }
+        var suggestions by remember { mutableStateOf<List<Pair<String, Point>>>(emptyList()) }
+        val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
         LaunchedEffect(Unit) {
             val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
             if (uid != null) FirebaseFirestore.getInstance().collection("users").document(uid).get().addOnSuccessListener { doc ->
@@ -140,6 +156,39 @@ fun HomeScreen() {
             }
         }
         LaunchedEffect(Unit) { headerVisible = true }
+        LaunchedEffect(searchQuery) {
+            if (mapboxPublicToken.isBlank()) {
+                suggestions = emptyList()
+            } else if (searchQuery.trim().length >= 2) {
+                try {
+                    delay(250)
+                    val q = URLEncoder.encode(searchQuery.trim(), "UTF-8")
+                    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?autocomplete=true&limit=6&language=es&access_token=${mapboxPublicToken}"
+                    val json = withContext(Dispatchers.IO) {
+                        URL(url).openStream().bufferedReader().use { it.readText() }
+                    }
+                    val obj = JSONObject(json)
+                    val feats = obj.optJSONArray("features") ?: JSONArray()
+                    val result = mutableListOf<Pair<String, Point>>()
+                    for (i in 0 until feats.length()) {
+                        val f = feats.getJSONObject(i)
+                        val name = f.optString("place_name", "")
+                        val center = f.optJSONArray("center")
+                        if (name.isNotBlank() && center != null && center.length() >= 2) {
+                            val lon = center.optDouble(0)
+                            val lat = center.optDouble(1)
+                            result.add(name to Point.fromLngLat(lon, lat))
+                        }
+                    }
+                    suggestions = result
+                } catch (e: Exception) {
+                    DebugLog.log("Error geocoding: ${e.message}")
+                    suggestions = emptyList()
+                }
+            } else {
+                suggestions = emptyList()
+            }
+        }
 
         val headerShiftFraction by animateFloatAsState(
             targetValue = if (isSearchFocused) 0.5f else 0f,
@@ -200,21 +249,29 @@ fun HomeScreen() {
                         .padding(top = 20.dp, start = 16.dp, end = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "intu",
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 32.sp
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Text(
-                        text = if (firstName.isNotBlank()) "¡Hola $firstName!" else "¡Hola!",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontSize = 24.sp
-                    )
-                    Spacer(modifier = Modifier.height(40.dp))
+                    AnimatedVisibility(
+                        visible = !isSearchFocused,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "intu",
+                                color = Color.White,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text(
+                                text = if (firstName.isNotBlank()) "¡Hola $firstName!" else "¡Hola!",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontSize = 24.sp
+                            )
+                            Spacer(modifier = Modifier.height(40.dp))
+                        }
+                    }
                     HeaderSearchBar(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
@@ -222,11 +279,6 @@ fun HomeScreen() {
                         modifier = Modifier.padding(horizontal = 8.dp)
                     )
                     Spacer(modifier = Modifier.height(25.dp))
-                    // Dropdown de sugerencias bajo el campo de búsqueda
-                    val suggestions = listOf(
-                        Pair("Aeropuerto Jorge Chávez", Point.fromLngLat(-77.1144, -12.0219)),
-                        Pair("Centro de Lima", Point.fromLngLat(-77.0311, -12.0464))
-                    ).filter { searchQuery.length >= 2 }
                     if (suggestions.isNotEmpty()) {
                         Card(
                             modifier = Modifier
@@ -260,7 +312,13 @@ fun HomeScreen() {
                             }
                         }
                     }
-                    RowQuickActions()
+                    AnimatedVisibility(
+                        visible = !isSearchFocused,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        RowQuickActions()
+                    }
                 }
             }
         }
@@ -268,8 +326,10 @@ fun HomeScreen() {
 
     // Load style once and center on first location update
     val mapboxMap = mapView.mapboxMap
-    mapboxMap.loadStyleUri(Style.STANDARD) { _ ->
-        DebugLog.log("Mapa cargó estilo MAPBOX_STANDARD")
+    LaunchedEffect(mapView) {
+        mapboxMap.loadStyleUri(Style.STANDARD) { _ ->
+            DebugLog.log("Mapa cargó estilo MAPBOX_STANDARD")
+        }
     }
 
     val onFirstIndicator = remember {
