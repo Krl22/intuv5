@@ -43,7 +43,7 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
-        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
         splash.setOnExitAnimationListener { provider ->
             val iconView = provider.iconView
             val scaleX = ObjectAnimator.ofFloat(iconView, android.view.View.SCALE_X, 1f, 1.2f)
@@ -62,7 +62,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         setContent {
-            IntuTheme {
+            IntuTheme(darkTheme = false, dynamicColor = false) {
                 val auth = FirebaseAuth.getInstance()
                 var isLoggedIn by remember { mutableStateOf(auth.currentUser != null) }
                 var needsOnboarding by remember { mutableStateOf(false) }
@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
 @Preview(showBackground = true)
 @Composable
 fun GreetingPreview() {
-    IntuTheme {
+    IntuTheme(darkTheme = false, dynamicColor = false) {
         TaxiApp()
     }
 }
