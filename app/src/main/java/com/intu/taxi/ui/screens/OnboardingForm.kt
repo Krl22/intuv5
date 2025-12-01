@@ -34,6 +34,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.ZoneOffset
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,7 +88,7 @@ fun OnboardingForm(onCompleted: () -> Unit) {
                     Button(onClick = {
                         val millis = dateState.selectedDateMillis
                         if (millis != null) {
-                            val date = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+                            val date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
                             birthdate.value = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
                         }
                         datePickerOpen.value = false

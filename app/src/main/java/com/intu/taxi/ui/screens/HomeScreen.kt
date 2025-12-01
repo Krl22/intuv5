@@ -58,6 +58,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.max
@@ -80,7 +81,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextField
@@ -88,12 +92,25 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.border
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.draw.scale
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import kotlinx.coroutines.delay
@@ -101,6 +118,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 import java.net.URLEncoder
+import java.net.HttpURLConnection
+import java.util.Locale
 import org.json.JSONObject
 import org.json.JSONArray
 
@@ -109,6 +128,7 @@ fun SearchBar(
     value: String,
     onValueChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit = {},
+    onPinClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     placeholderText: String = "¿A dónde quieres ir?",
     showClearButton: Boolean = false,
@@ -132,7 +152,9 @@ fun SearchBar(
                         Icon(Icons.Filled.Clear, contentDescription = "Limpiar", tint = Color(0xFF8E8E93))
                     }
                 } else if (showMicButton) {
-                    Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Color(0xFF8E8E93))
+                    IconButton(onClick = onPinClick, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Color(0xFF8E8E93))
+                    }
                 }
             },
             singleLine = true,
@@ -204,7 +226,12 @@ fun HomeScreen() {
     var showSearchBar by remember { mutableStateOf(true) }
     var selectedDestination by remember { mutableStateOf<Point?>(null) }
     var isRouteMode by remember { mutableStateOf(false) }
+    var isPinMode by remember { mutableStateOf(false) }
+    var pinCenter by remember { mutableStateOf<Point?>(null) }
     var lastUserLocation by remember { mutableStateOf<Point?>(null) }
+    var routeDurationMinutes by remember { mutableStateOf<Double?>(null) }
+    var routeDistanceKm by remember { mutableStateOf<Double?>(null) }
+    var selectedRide by remember { mutableStateOf<String?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -239,7 +266,7 @@ fun HomeScreen() {
         LaunchedEffect(searchQuery) {
             if (mapboxPublicToken.isBlank()) {
                 suggestions = emptyList()
-            } else if (searchQuery.trim().length >= 2) {
+            } else if (!isPinMode && searchQuery.trim().length >= 2) {
                 try {
                     delay(250)
                     val q = URLEncoder.encode(searchQuery.trim(), "UTF-8")
@@ -255,36 +282,8 @@ fun HomeScreen() {
                     val maxLon = lon + lonDelta
                     val maxLat = lat + latDelta
                     val bbox = "$minLon,$minLat,$maxLon,$maxLat"
-                    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?types=address&autocomplete=true&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${lon},${lat}&bbox=${bbox}&access_token=${mapboxPublicToken}"
-                    val json = withContext(Dispatchers.IO) {
-                        URL(url).openStream().bufferedReader().use { it.readText() }
-                    }
-                    val obj = JSONObject(json)
-                    val feats = obj.optJSONArray("features") ?: JSONArray()
-                    val result = mutableListOf<Pair<String, Point>>()
-                    for (i in 0 until feats.length()) {
-                        val f = feats.getJSONObject(i)
-                        val addressNum = f.optString("address", "")
-                        val streetName = f.optString("text", "")
-                        var city = ""
-                        val ctx = f.optJSONArray("context")
-                        if (ctx != null) {
-                            for (j in 0 until ctx.length()) {
-                                val c = ctx.optJSONObject(j)
-                                val id = c?.optString("id", "") ?: ""
-                                if (id.startsWith("place.") || id.startsWith("locality.")) {
-                                    city = c.optString("text", "")
-                                    break
-                                }
-                            }
-                        }
-                        val name = listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
-                        val center = f.optJSONArray("center")
-                        if (name.isNotBlank() && center != null && center.length() >= 2) {
-                            val lon = center.optDouble(0)
-                            val lat = center.optDouble(1)
-                            result.add(name to Point.fromLngLat(lon, lat))
-                        }
+                    val result = withContext(Dispatchers.IO) {
+                        geocodeSuggestions(mapboxPublicToken, q, centerPoint, bbox)
                     }
                     suggestions = result
                 } catch (e: Exception) {
@@ -297,7 +296,7 @@ fun HomeScreen() {
         }
 
         val headerShiftFraction by animateFloatAsState(
-            targetValue = if (isSearchFocused) 0.5f else 0f,
+            targetValue = if (isSearchFocused || isPinMode) 0.5f else 0f,
             animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
             label = "headerShiftFraction"
         )
@@ -357,7 +356,7 @@ fun HomeScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     AnimatedVisibility(
-                        visible = !isSearchFocused,
+                        visible = !(isSearchFocused || isPinMode),
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -369,14 +368,14 @@ fun HomeScreen() {
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 32.sp
                             )
-                            Spacer(modifier = Modifier.height(20.dp))
+                            Spacer(modifier = Modifier.height(15.dp))
                             Text(
                                 text = if (firstName.isNotBlank()) "¡Hola $firstName!" else "¡Hola!",
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontSize = 24.sp
                             )
-                            Spacer(modifier = Modifier.height(40.dp))
+                            Spacer(modifier = Modifier.height(20.dp))
                         }
                     }
                     if (showSearchBar) {
@@ -384,10 +383,17 @@ fun HomeScreen() {
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
                             onFocusChange = { focused -> isSearchFocused = focused },
+                            onPinClick = {
+                                isPinMode = true
+                                isSearchFocused = false
+                                suggestions = emptyList()
+                                focusManager.clearFocus()
+                                pinCenter = mapView.mapboxMap.cameraState.center
+                            },
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
                     }
-                    if (showSearchBar && suggestions.isNotEmpty()) {
+                    if (showSearchBar && !isPinMode && suggestions.isNotEmpty()) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -426,10 +432,10 @@ fun HomeScreen() {
                         }
                     }
                     if (!isSearchFocused) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(25.dp))
                     }
                     AnimatedVisibility(
-                        visible = !isSearchFocused,
+                        visible = !(isSearchFocused || isPinMode),
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -468,7 +474,31 @@ fun HomeScreen() {
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.95f)),
                     shape = RoundedCornerShape(50)
                 ) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF111827))
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF111827))
+                }
+            }
+            // Ride options overlay at bottom (dynamic prices)
+            val eta = routeDurationMinutes ?: 5.0
+            val km = routeDistanceKm ?: 2.0
+            val priceHonda = calcFare(km, eta, base = 2.0, perKm = 1.2, perMin = 0.25)
+            val priceBajaj = calcFare(km, eta, base = 1.5, perKm = 0.9, perMin = 0.22)
+            val priceColectivo = calcFare(km, eta, base = 1.2, perKm = 0.7, perMin = 0.20)
+            val priceEsperaYAhorra = calcFare(km, eta, base = 1.5, perKm = 0.9, perMin = 0.22, multiplier = 0.90)
+            val priceEnvioPaquete = calcFare(km, eta, base = 2.2, perKm = 1.4, perMin = 0.30, multiplier = 1.10)
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                val options = listOf(
+                    RideOptionData("Intu Colectivo", priceColectivo, eta, null, listOf(Color(0xFF27AE60), Color(0xFF2ECC71))),
+                    RideOptionData("espera y ahorra", priceEsperaYAhorra, eta, null, listOf(Color(0xFFF39C12), Color(0xFFE67E22))),
+                    RideOptionData("Intu Honda", priceHonda, eta, null, listOf(Color(0xFF08817E), Color(0xFF0FB9B1))),
+                    RideOptionData("Intu Bajaj", priceBajaj, eta, null, listOf(Color(0xFF1E1F47), Color(0xFF3A3B7B))),
+                    RideOptionData("envio de paquete", priceEnvioPaquete, eta, null, listOf(Color(0xFF8E44AD), Color(0xFF9B59B6)))
+                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    RideOptionsSlider(
+                        options = options,
+                        selectedOptionName = selectedRide,
+                        onOptionSelected = { selectedRide = it }
+                    )
                 }
             }
         }
@@ -485,6 +515,62 @@ fun HomeScreen() {
             selectedDestination = null
             searchQuery = ""
             suggestions = emptyList()
+        }
+        // Pin mode: show red pin at screen center
+        if (isPinMode) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(40.dp))
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp)
+                        .align(Alignment.BottomCenter),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Button(
+                        onClick = {
+                            val center = pinCenter
+                            if (center != null) {
+                                selectedDestination = center
+                                isPinMode = false
+                                isRouteMode = true
+                                showSearchBar = false
+                                suggestions = emptyList()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.95f)),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text("Confirmar", color = Color(0xFF111827))
+                    }
+                }
+            }
+        }
+        // Update pin center by polling while pin mode is active
+        LaunchedEffect(isPinMode) {
+            while (isPinMode) {
+                pinCenter = mapView.mapboxMap.cameraState.center
+                delay(300)
+            }
+        }
+        // Reverse geocode pin center into search field text
+        LaunchedEffect(pinCenter, isPinMode) {
+            val p = pinCenter
+            if (isPinMode && p != null && mapboxPublicToken.isNotBlank()) {
+                try {
+                    delay(250)
+                    val name = withContext(Dispatchers.IO) { reverseGeocode(mapboxPublicToken, p) }
+                    if (!name.isNullOrBlank()) searchQuery = name
+                } catch (e: Exception) {
+                    DebugLog.log("Error reverse geocoding pin: ${e.message}")
+                }
+            }
+        }
+        // Back to normal from pin mode on system back
+        BackHandler(enabled = isPinMode) {
+            isPinMode = false
         }
         BackHandler(enabled = isSearchFocused && !isRouteMode) {
             focusManager.clearFocus()
@@ -543,6 +629,10 @@ fun HomeScreen() {
                 if (routes.length() > 0) {
                     val route = routes.getJSONObject(0)
                     val geometry = route.optJSONObject("geometry")
+                    val durationSec = route.optDouble("duration", Double.NaN)
+                    if (!durationSec.isNaN()) routeDurationMinutes = kotlin.math.max(1.0, durationSec / 60.0)
+                    val distanceMeters = route.optDouble("distance", Double.NaN)
+                    if (!distanceMeters.isNaN()) routeDistanceKm = kotlin.math.max(0.1, distanceMeters / 1000.0)
                     val coords = geometry?.optJSONArray("coordinates")
                     if (coords != null && coords.length() > 1) {
                         val pts = mutableListOf<Point>()
@@ -636,3 +726,461 @@ fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
 
 private const val SEARCH_RADIUS_MILES = 20.0
 private const val SEARCH_SUGGESTIONS_LIMIT = 6
+private const val HTTP_TIMEOUT_MS = 6000
+
+private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
+    val addressNum = f.optString("address", "")
+    val streetName = f.optString("text", "")
+    var city = ""
+    val ctx = f.optJSONArray("context")
+    if (ctx != null) {
+        for (j in 0 until ctx.length()) {
+            val c = ctx.optJSONObject(j)
+            val id = c?.optString("id", "") ?: ""
+            if (id.startsWith("place.") || id.startsWith("locality.")) {
+                city = c.optString("text", "")
+                break
+            }
+        }
+    }
+    val name = listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
+    val center = f.optJSONArray("center")
+    return if (name.isNotBlank() && center != null && center.length() >= 2) {
+        val lon = center.optDouble(0)
+        val lat = center.optDouble(1)
+        name to Point.fromLngLat(lon, lat)
+    } else null
+}
+
+private suspend fun httpGet(url: String): String {
+    val conn = URL(url).openConnection() as HttpURLConnection
+    conn.connectTimeout = HTTP_TIMEOUT_MS
+    conn.readTimeout = HTTP_TIMEOUT_MS
+    conn.requestMethod = "GET"
+    conn.doInput = true
+    return try {
+        conn.inputStream.bufferedReader().use { it.readText() }
+    } finally {
+        conn.disconnect()
+    }
+}
+
+private suspend fun geocodeSuggestions(token: String, q: String, center: Point, bbox: String): List<Pair<String, Point>> {
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?types=address&autocomplete=true&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}&bbox=${bbox}&access_token=${token}"
+    val json = httpGet(url)
+    val obj = JSONObject(json)
+    val feats = obj.optJSONArray("features") ?: JSONArray()
+    val out = mutableListOf<Pair<String, Point>>()
+    for (i in 0 until feats.length()) {
+        val f = feats.getJSONObject(i)
+        val parsed = parseAddressFeature(f)
+        if (parsed != null) out.add(parsed)
+    }
+    return out
+}
+
+private suspend fun reverseGeocode(token: String, p: Point): String? {
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${p.longitude()},${p.latitude()}.json?types=address&language=es&limit=1&access_token=${token}"
+    val json = httpGet(url)
+    val obj = JSONObject(json)
+    val feats = obj.optJSONArray("features") ?: JSONArray()
+    if (feats.length() == 0) return null
+    val parsed = parseAddressFeature(feats.getJSONObject(0))
+    return parsed?.first
+}
+
+private fun calcFare(distanceKm: Double?, durationMin: Double?, base: Double, perKm: Double, perMin: Double, multiplier: Double = 1.0): Double {
+    val d = kotlin.math.max(0.1, distanceKm ?: 0.0)
+    val t = kotlin.math.max(1.0, durationMin ?: 0.0)
+    return (base + d * perKm + t * perMin) * multiplier
+}
+@Composable
+private fun RideOptionCard(
+    name: String,
+    price: Double,
+    minutes: Double,
+    leadingContent: (@Composable () -> Unit)? = null,
+    selected: Boolean = false,
+    onClick: () -> Unit = {}
+) {
+    val priceStr = String.format(Locale.getDefault(), "$%.2f", price)
+    val etaMin = kotlin.math.max(1.0, minutes)
+    val etaStr = String.format(Locale.getDefault(), "~%.0f min", etaMin)
+
+    val cardColors = when (name) {
+        "Intu Honda" -> listOf(Color(0xFF08817E), Color(0xFF0FB9B1))
+        "Intu Bajaj" -> listOf(Color(0xFF1E1F47), Color(0xFF3A3B7B))
+        "Intu Colectivo" -> listOf(Color(0xFF27AE60), Color(0xFF2ECC71))
+        "espera y ahorra" -> listOf(Color(0xFFF39C12), Color(0xFFE67E22))
+        "entrega de paquete" -> listOf(Color(0xFF8E44AD), Color(0xFF9B59B6))
+        else -> listOf(Color(0xFF08817E), Color(0xFF1E1F47))
+    }
+
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 200),
+        label = "cardScale"
+    )
+    val glowAlpha by animateFloatAsState(
+        targetValue = if (selected) 0.3f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "glowAlpha"
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .padding(horizontal = 4.dp, vertical = 6.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = if (selected) 0.95f else 0.8f)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (selected) 12.dp else 4.dp
+        ),
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            brush = Brush.linearGradient(
+                colors = if (selected) cardColors else listOf(Color(0xFFE0E0E0), Color(0xFFE0E0E0))
+            )
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            cardColors[0].copy(alpha = glowAlpha),
+                            Color.Transparent
+                        ),
+                        center = Offset(0.8f, 0.2f),
+                        radius = 200f
+                    )
+                )
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = cardColors,
+                                    start = Offset(0f, 0f),
+                                    end = Offset(100f, 100f)
+                                )
+                            )
+                            .border(
+                                width = 2.dp,
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.6f),
+                                        Color.White.copy(alpha = 0.1f)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (leadingContent != null) {
+                            leadingContent()
+                        } else {
+                            Icon(
+                                Icons.Outlined.Place,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = name.replaceFirstChar { it.titlecase() },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color(0xFF1C1C1E),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Schedule,
+                                contentDescription = null,
+                                tint = Color(0xFF6E6E73),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = etaStr,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF6E6E73)
+                            )
+                        }
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = priceStr,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = cardColors[0],
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (selected) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = "Seleccionado",
+                                tint = cardColors[0],
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Seleccionado",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = cardColors[0],
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+data class RideOptionData(
+    val name: String,
+    val price: Double,
+    val minutes: Double,
+    val leadingContent: (@Composable () -> Unit)? = null,
+    val colors: List<Color>
+)
+
+@Composable
+private fun RideOptionSlideCard(
+    option: RideOptionData,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    index: Int
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.05f else 0.95f,
+        animationSpec = tween(durationMillis = 300),
+        label = "slideScale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isSelected) 1f else 0.7f,
+        animationSpec = tween(durationMillis = 300),
+        label = "slideAlpha"
+    )
+    Card(
+        modifier = Modifier
+            .width(200.dp)
+            .fillMaxHeight()
+            .scale(scale)
+            .alpha(alpha)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = if (isSelected) 0.95f else 0.8f)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 16.dp else 8.dp
+        ),
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isSelected) 3.dp else 1.dp,
+            brush = Brush.linearGradient(
+                colors = if (isSelected) option.colors else listOf(Color(0xFFE0E0E0), Color(0xFFE0E0E0))
+            )
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = "Seleccionado",
+                            tint = option.colors[0],
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = option.name.replaceFirstChar { it.titlecase() },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFF1C1C1E),
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = option.colors,
+                            start = Offset(0f, 0f),
+                            end = Offset(100f, 100f)
+                        )
+                    )
+                    .border(
+                        width = 2.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.4f),
+                                Color.White.copy(alpha = 0.1f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                option.leadingContent?.invoke() ?: Icon(
+                    Icons.Outlined.Place,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                val priceStr = String.format(Locale.getDefault(), "$%.2f", option.price)
+                val etaMin = kotlin.math.max(1.0, option.minutes)
+                val etaStr = String.format(Locale.getDefault(), "~%.0f min", etaMin)
+                Text(
+                    text = priceStr,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = option.colors[0],
+                    fontWeight = FontWeight.Bold
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Icon(
+                        Icons.Outlined.Schedule,
+                        contentDescription = null,
+                        tint = Color(0xFF6E6E73),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = etaStr, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RideOptionsSlider(
+    options: List<RideOptionData>,
+    selectedOptionName: String?,
+    onOptionSelected: (String) -> Unit,
+    initialSelectedIndex: Int = 0
+) {
+    val listState = rememberLazyListState()
+    val snappingLayout = remember(listState) { SnapLayoutInfoProvider(listState) }
+    val flingBehavior = rememberSnapFlingBehavior(snappingLayout)
+    val density = LocalDensity.current
+    val baseCount = options.size
+    val loopFactor = 50
+    val totalCount = baseCount * loopFactor
+    val startIndex = (baseCount * loopFactor / 2) + (initialSelectedIndex % baseCount)
+    LaunchedEffect(Unit) {
+        if (baseCount > 0) {
+            listState.scrollToItem(startIndex)
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = layoutInfo.viewportEndOffset / 2
+            val itemWidthPx = with(density) { 200.dp.roundToPx() }
+            val desiredOffset = viewportCenter - (itemWidthPx / 2)
+            listState.scrollToItem(startIndex, desiredOffset)
+            onOptionSelected(options[initialSelectedIndex % baseCount].name)
+        }
+    }
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress) {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = layoutInfo.viewportEndOffset / 2
+            var closestItemIndex = 0
+            var minDistance = Float.MAX_VALUE
+            layoutInfo.visibleItemsInfo.forEach { itemInfo ->
+                val itemCenter = itemInfo.offset + itemInfo.size / 2
+                val distance = kotlin.math.abs(itemCenter - viewportCenter)
+                if (distance < minDistance) {
+                    minDistance = distance.toFloat()
+                    closestItemIndex = itemInfo.index
+                }
+            }
+            if (baseCount > 0 && closestItemIndex in 0 until totalCount) {
+                val baseIndex = closestItemIndex % baseCount
+                onOptionSelected(options[baseIndex].name)
+            }
+        }
+    }
+    Column {
+        LazyRow(
+            state = listState,
+            flingBehavior = flingBehavior,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp)
+        ) {
+            items(totalCount) { idx ->
+                val baseIndex = idx % baseCount
+                val option = options[baseIndex]
+                RideOptionSlideCard(
+                    option = option,
+                    isSelected = (selectedOptionName == option.name),
+                    onClick = { onOptionSelected(option.name) },
+                    index = baseIndex
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+        ) {
+            options.forEachIndexed { index, _ ->
+                val isSel = (selectedOptionName == options[index].name)
+                val color by animateColorAsState(
+                    targetValue = if (isSel) Color(0xFF08817E) else Color(0xFFE0E0E0),
+                    animationSpec = tween(durationMillis = 300),
+                    label = "indicatorColor"
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(if (isSel) 10.dp else 8.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                )
+            }
+        }
+    }
+}

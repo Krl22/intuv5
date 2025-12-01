@@ -87,8 +87,18 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.clickable
 
+data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double)
+
 @Composable
-fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVerifyPhone: (String) -> Unit = {}, onStartDriver: () -> Unit = {}, onStartTopUp: () -> Unit = {}) {
+fun AccountScreen(
+    onDebugClick: () -> Unit = {},
+    onLogout: () -> Unit = {},
+    onVerifyPhone: (String) -> Unit = {},
+    onStartDriver: () -> Unit = {},
+    onStartTopUp: () -> Unit = {},
+    onStartPickPlace: (String) -> Unit = {},
+    pendingPickedPlace: SavedPlace? = null
+) {
     val uid = FirebaseAuth.getInstance().currentUser?.uid
     var profile by remember { mutableStateOf<Map<String, Any>?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -99,6 +109,17 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
             loading = false
         } else null
         onDispose { reg?.remove() }
+    }
+
+    LaunchedEffect(pendingPickedPlace) {
+        val p = pendingPickedPlace
+        val u = uid
+        if (p != null && u != null) {
+            val placeMap = mapOf("name" to p.name, "lat" to p.lat, "lon" to p.lon)
+            val field = when (p.type) { "home" -> "savedPlaces.home"; "work" -> "savedPlaces.work"; else -> "savedPlaces.other" }
+            FirebaseFirestore.getInstance().collection("users").document(u)
+                .set(mapOf(field to placeMap), SetOptions.merge())
+        }
     }
     val name = listOf(
         profile?.get("firstName") as? String ?: "",
@@ -274,7 +295,13 @@ fun AccountScreen(onDebugClick: () -> Unit = {}, onLogout: () -> Unit = {}, onVe
                 item { DriverStatsCard() }
                 item { DriverRecentTripsCard() }
             }
-            item { SavedPlacesCard() }
+            item {
+                SavedPlacesCard(
+                    profile = profile,
+                    onSetHome = { onStartPickPlace("home") },
+                    onSetWork = { onStartPickPlace("work") }
+                )
+            }
             item { CountrySelector(country = country, onSelect = { saveCountry(it) }) }
             item { LanguageSelector() }
             item { SupportPrivacyCard(onDebugClick, onLogout) }
@@ -471,18 +498,33 @@ private fun PaymentCard(country: String, method: String, onChange: (String) -> U
 }
 
 @Composable
-private fun SavedPlacesCard() {
+private fun SavedPlacesCard(
+    profile: Map<String, Any>?,
+    onSetHome: () -> Unit,
+    onSetWork: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(8.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.saved_places_label), style = MaterialTheme.typography.titleMedium)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            ListItem(headlineContent = { Text(stringResource(R.string.home_place)) }, leadingContent = { Icon(Icons.Filled.Home, contentDescription = null, tint = Color(0xFF0D9488)) })
-            ListItem(headlineContent = { Text(stringResource(R.string.work_place)) }, leadingContent = { Icon(Icons.Filled.Work, contentDescription = null, tint = Color(0xFF0F172A)) })
+            val sp = profile?.get("savedPlaces") as? Map<String, Any> ?: emptyMap()
+            val home = sp["home"] as? Map<String, Any>
+            val work = sp["work"] as? Map<String, Any>
+            ListItem(
+                headlineContent = { Text((home?.get("name") as? String) ?: stringResource(R.string.home_place)) },
+                leadingContent = { Icon(Icons.Filled.Home, contentDescription = null, tint = Color(0xFF0D9488)) },
+                trailingContent = { OutlinedButton(onClick = onSetHome) { Text("Establecer casa") } }
+            )
+            ListItem(
+                headlineContent = { Text((work?.get("name") as? String) ?: stringResource(R.string.work_place)) },
+                leadingContent = { Icon(Icons.Filled.Work, contentDescription = null, tint = Color(0xFF0F172A)) },
+                trailingContent = { OutlinedButton(onClick = onSetWork) { Text("Establecer trabajo") } }
+            )
             OutlinedButton(onClick = {}) { Text(stringResource(R.string.manage_places)) }
         }
     }
