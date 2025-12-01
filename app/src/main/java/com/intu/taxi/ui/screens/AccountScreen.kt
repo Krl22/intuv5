@@ -22,6 +22,14 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.LocalMall
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.LocalCafe
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.PriceChange
 import androidx.compose.material3.Button
@@ -67,6 +75,8 @@ import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.FirebaseException
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FieldPath
 import android.app.Activity
 import androidx.compose.ui.platform.LocalContext
 import com.google.firebase.auth.GoogleAuthProvider
@@ -86,8 +96,9 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.clickable
+import com.intu.taxi.ui.debug.DebugLog
 
-data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double)
+data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double, val label: String? = null, val icon: String? = null)
 
 @Composable
 fun AccountScreen(
@@ -115,10 +126,36 @@ fun AccountScreen(
         val p = pendingPickedPlace
         val u = uid
         if (p != null && u != null) {
-            val placeMap = mapOf("name" to p.name, "lat" to p.lat, "lon" to p.lon)
-            val field = when (p.type) { "home" -> "savedPlaces.home"; "work" -> "savedPlaces.work"; else -> "savedPlaces.other" }
+            val placeMap = mutableMapOf<String, Any>(
+                "name" to p.name,
+                "lat" to p.lat,
+                "lon" to p.lon
+            )
+            if (!p.label.isNullOrBlank()) placeMap["label"] = p.label!!
+            if (!p.icon.isNullOrBlank()) placeMap["icon"] = p.icon!!
             FirebaseFirestore.getInstance().collection("users").document(u)
-                .set(mapOf(field to placeMap), SetOptions.merge())
+                .update(FieldPath.of("savedPlaces", "places"), FieldValue.arrayUnion(placeMap))
+            com.intu.taxi.ui.debug.DebugLog.log("Account(pending): lugar guardado -> ${p.name}")
+        }
+    }
+
+    var showAddPlace by remember { mutableStateOf(false) }
+    var savedPlaceQueued by remember { mutableStateOf<SavedPlace?>(null) }
+    LaunchedEffect(savedPlaceQueued) {
+        val p = savedPlaceQueued
+        val u = uid
+        if (p != null && u != null) {
+            val placeMap = mutableMapOf<String, Any>(
+                "name" to p.name,
+                "lat" to p.lat,
+                "lon" to p.lon
+            )
+            if (!p.label.isNullOrBlank()) placeMap["label"] = p.label!!
+            if (!p.icon.isNullOrBlank()) placeMap["icon"] = p.icon!!
+            FirebaseFirestore.getInstance().collection("users").document(u)
+                .update(FieldPath.of("savedPlaces", "places"), FieldValue.arrayUnion(placeMap))
+            DebugLog.log("Account: lugar guardado -> ${p.name}")
+            savedPlaceQueued = null
         }
     }
     val name = listOf(
@@ -299,7 +336,11 @@ fun AccountScreen(
                 SavedPlacesCard(
                     profile = profile,
                     onSetHome = { onStartPickPlace("home") },
-                    onSetWork = { onStartPickPlace("work") }
+                    onSetWork = { onStartPickPlace("work") },
+                    onAddPlace = {
+                        DebugLog.log("Account: botón Agregar pulsado")
+                        showAddPlace = true
+                    }
                 )
             }
             item { CountrySelector(country = country, onSelect = { saveCountry(it) }) }
@@ -318,6 +359,13 @@ fun AccountScreen(
                     }
                 )
             }
+        }
+    }
+    if (showAddPlace) {
+        AddPlaceScreen(defaultType = "other") { place ->
+            DebugLog.log("AddPlaceScreen: seleccionado ${place.name}")
+            savedPlaceQueued = place
+            showAddPlace = false
         }
     }
 }
@@ -501,7 +549,8 @@ private fun PaymentCard(country: String, method: String, onChange: (String) -> U
 private fun SavedPlacesCard(
     profile: Map<String, Any>?,
     onSetHome: () -> Unit,
-    onSetWork: () -> Unit
+    onSetWork: () -> Unit,
+    onAddPlace: () -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
@@ -510,22 +559,40 @@ private fun SavedPlacesCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.saved_places_label), style = MaterialTheme.typography.titleMedium)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.saved_places_label), style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                OutlinedButton(onClick = onAddPlace) { Text("Agregar") }
+            }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val sp = profile?.get("savedPlaces") as? Map<String, Any> ?: emptyMap()
-            val home = sp["home"] as? Map<String, Any>
-            val work = sp["work"] as? Map<String, Any>
-            ListItem(
-                headlineContent = { Text((home?.get("name") as? String) ?: stringResource(R.string.home_place)) },
-                leadingContent = { Icon(Icons.Filled.Home, contentDescription = null, tint = Color(0xFF0D9488)) },
-                trailingContent = { OutlinedButton(onClick = onSetHome) { Text("Establecer casa") } }
-            )
-            ListItem(
-                headlineContent = { Text((work?.get("name") as? String) ?: stringResource(R.string.work_place)) },
-                leadingContent = { Icon(Icons.Filled.Work, contentDescription = null, tint = Color(0xFF0F172A)) },
-                trailingContent = { OutlinedButton(onClick = onSetWork) { Text("Establecer trabajo") } }
-            )
-            OutlinedButton(onClick = {}) { Text(stringResource(R.string.manage_places)) }
+            val places = (sp["places"] as? List<*>) ?: emptyList<Any>()
+            if (places.isEmpty()) {
+                Text("No hay lugares guardados", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+            } else {
+                places.forEach { any ->
+                    val m = any as? Map<String, Any> ?: emptyMap()
+                    val name = (m["label"] as? String)?.takeIf { it.isNotBlank() } ?: (m["name"] as? String ?: "")
+                    val iconStr = (m["icon"] as? String) ?: "marker"
+                    val leading = when (iconStr) {
+                        "home" -> Icons.Filled.Home
+                        "work" -> Icons.Filled.Work
+                        "school" -> Icons.Filled.School
+                        "shopping" -> Icons.Filled.LocalMall
+                        "food" -> Icons.Filled.Restaurant
+                        "cafe" -> Icons.Filled.LocalCafe
+                        "hospital" -> Icons.Filled.LocalHospital
+                        "package" -> Icons.Filled.LocalShipping
+                        "star" -> Icons.Filled.Star
+                        "favorite" -> Icons.Filled.Favorite
+                        else -> Icons.Filled.DirectionsCar
+                    }
+                    ListItem(
+                        headlineContent = { Text(name) },
+                        leadingContent = { Icon(leading, contentDescription = null, tint = Color(0xFF0D9488)) }
+                    )
+                }
+            }
         }
     }
 }

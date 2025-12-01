@@ -37,6 +37,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import com.mapbox.maps.plugin.scalebar.scalebar
 import com.mapbox.maps.plugin.locationcomponent.location
+import com.mapbox.maps.plugin.logo.logo
+import com.mapbox.maps.plugin.attribution.attribution
 import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
 import com.mapbox.maps.extension.style.layers.generated.circleLayer
 import com.mapbox.maps.extension.style.layers.generated.lineLayer
@@ -77,6 +79,15 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.LocalMall
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.LocalCafe
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
@@ -122,6 +133,9 @@ import java.net.HttpURLConnection
 import java.util.Locale
 import org.json.JSONObject
 import org.json.JSONArray
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.google.firebase.auth.FirebaseAuth
+import com.intu.taxi.ui.screens.SavedPlace
 
 @Composable
 fun SearchBar(
@@ -187,6 +201,8 @@ fun HomeScreen() {
 
     LaunchedEffect(mapView) {
         mapView.scalebar.enabled = false
+        mapView.logo.enabled = false
+        mapView.attribution.enabled = false
     }
 
     // Location Component: enable if permission granted
@@ -236,6 +252,7 @@ fun HomeScreen() {
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
     var imeVisible by remember { mutableStateOf(false) }
+    var savedPlaces by remember { mutableStateOf<List<SavedPlace>>(emptyList()) }
     DisposableEffect(rootView) {
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, insets ->
             imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
@@ -250,11 +267,28 @@ fun HomeScreen() {
             factory = { mapView }
         )
 
-        LaunchedEffect(Unit) {
-            val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-            if (uid != null) FirebaseFirestore.getInstance().collection("users").document(uid).get().addOnSuccessListener { doc ->
-                firstName = doc.getString("firstName") ?: ""
+        DisposableEffect(Unit) {
+            val uid = FirebaseAuth.getInstance().currentUser?.uid
+            var reg: com.google.firebase.firestore.ListenerRegistration? = null
+            if (uid != null) {
+                val docRef = FirebaseFirestore.getInstance().collection("users").document(uid)
+                reg = docRef.addSnapshotListener { doc, _ ->
+                    firstName = doc?.getString("firstName") ?: ""
+                    val sp = doc?.get("savedPlaces") as? Map<*, *>
+                    val placesAny = sp?.get("places") as? List<*> ?: emptyList<Any>()
+                    val parsed = placesAny.mapNotNull { any ->
+                        val m = any as? Map<*, *> ?: return@mapNotNull null
+                        val name = (m["name"] as? String) ?: ""
+                        val lat = (m["lat"] as? Number)?.toDouble() ?: return@mapNotNull null
+                        val lon = (m["lon"] as? Number)?.toDouble() ?: return@mapNotNull null
+                        val label = m["label"] as? String
+                        val icon = m["icon"] as? String
+                        SavedPlace(type = "other", name = name, lat = lat, lon = lon, label = label, icon = icon)
+                    }
+                    savedPlaces = parsed
+                }
             }
+            onDispose { reg?.remove() }
         }
         LaunchedEffect(Unit) { headerVisible = true }
         LaunchedEffect(imeVisible) {
@@ -439,7 +473,7 @@ fun HomeScreen() {
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
-                        RowQuickActions()
+                        RowQuickActions(places = savedPlaces)
                     }
                 }
             }
@@ -689,15 +723,27 @@ fun HomeScreen() {
 }
 
 @Composable
-fun RowQuickActions() {
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.layout.Row(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
-        ) {
-            QuickActionButton(icon = androidx.compose.material.icons.Icons.Filled.Home, label = stringResource(id = com.intu.taxi.R.string.quick_home))
-            QuickActionButton(icon = androidx.compose.material.icons.Icons.Filled.Work, label = stringResource(id = com.intu.taxi.R.string.quick_work))
-            QuickActionButton(icon = androidx.compose.material.icons.Icons.Filled.LocationOn, label = stringResource(id = com.intu.taxi.R.string.quick_marker))
+fun RowQuickActions(places: List<SavedPlace>) {
+    val count = places.size
+    Box(modifier = Modifier.fillMaxWidth(0.7f), contentAlignment = Alignment.Center) {
+        if (count == 0) {
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+            ) {
+                QuickActionButton(icon = Icons.Filled.Add, label = "Agregar")
+            }
+        } else if (count <= 3) {
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+            ) {
+                places.forEach { p ->
+                    QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p))
+                }
+            }
+        } else {
+            QuickActionsSlider(places)
         }
     }
 }
@@ -720,6 +766,56 @@ fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
             Icon(icon, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.height(6.dp))
             Text(label, color = Color.White, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+private fun quickIcon(iconStr: String?): ImageVector {
+    return when (iconStr) {
+        "home" -> Icons.Filled.Home
+        "work" -> Icons.Filled.Work
+        "school" -> Icons.Filled.School
+        "shopping" -> Icons.Filled.LocalMall
+        "food" -> Icons.Filled.Restaurant
+        "cafe" -> Icons.Filled.LocalCafe
+        "hospital" -> Icons.Filled.LocalHospital
+        "package" -> Icons.Filled.LocalShipping
+        "star" -> Icons.Filled.Star
+        "favorite" -> Icons.Filled.Favorite
+        else -> Icons.Filled.LocationOn
+    }
+}
+
+@Composable
+private fun displayLabel(place: SavedPlace?): String {
+    val ctx = LocalContext.current
+    val label = place?.label?.takeIf { it.isNotBlank() }
+    val name = place?.name?.takeIf { it.isNotBlank() }
+    return label ?: name ?: ctx.getString(com.intu.taxi.R.string.quick_marker)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun QuickActionsSlider(places: List<SavedPlace>) {
+    val baseCount = places.size
+    val loopFactor = 50
+    val totalCount = baseCount * loopFactor
+    val listState = rememberLazyListState()
+    val snappingLayout = remember(listState) { SnapLayoutInfoProvider(listState) }
+    val flingBehavior = rememberSnapFlingBehavior(snappingLayout)
+    LazyRow(
+        state = listState,
+        flingBehavior = flingBehavior,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(80.dp)
+    ) {
+        items(totalCount) { idx ->
+            val baseIndex = idx % baseCount
+            val p = places[baseIndex]
+            QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p))
         }
     }
 }
