@@ -53,6 +53,12 @@
     <string name="saved_count">Saved: %1$d</string>
     <string name="support_privacy_desc">Help center and privacy</string>
     <string name="delete">Eliminar</string>
+    <string name="payment_method_label">Payment method</string>
+    <string name="confirm_ride">Confirmar viaje</string>
+    <string name="choose_your_trip">Elige tu viaje</string>
+    <string name="swipe_more_options">Desliza para ver más opciones</string>
+    <string name="searching_driver_title">Buscando conductor</string>
+    <string name="searching_driver_subtitle">Estamos encontrando un conductor cercano</string>
 
     <string name="vehicle_data_label">Vehicle details</string>
     <string name="year_label_prefix">Year </string>

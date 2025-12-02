@@ -30,6 +30,8 @@ import com.intu.taxi.ui.debug.DebugLog
 import com.mapbox.maps.MapView
 import com.mapbox.maps.Style
 import com.mapbox.maps.CameraOptions
+import com.mapbox.maps.EdgeInsets
+import com.mapbox.maps.ScreenCoordinate
 import com.mapbox.geojson.Point
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.LineString
@@ -49,6 +51,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -92,6 +95,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Schedule
@@ -100,6 +105,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
@@ -135,6 +142,8 @@ import org.json.JSONObject
 import org.json.JSONArray
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 import com.intu.taxi.ui.screens.SavedPlace
 
 @Composable
@@ -248,6 +257,9 @@ fun HomeScreen() {
     var routeDurationMinutes by remember { mutableStateOf<Double?>(null) }
     var routeDistanceKm by remember { mutableStateOf<Double?>(null) }
     var selectedRide by remember { mutableStateOf<String?>(null) }
+    var paymentMethod by remember { mutableStateOf("efectivo") }
+    var isSearchingDriver by remember { mutableStateOf(false) }
+    var currentRideRequestId by remember { mutableStateOf<String?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -255,6 +267,7 @@ fun HomeScreen() {
     var savedPlaces by remember { mutableStateOf<List<SavedPlace>>(emptyList()) }
     var showAddPlace by remember { mutableStateOf(false) }
     var savedPlaceQueued by remember { mutableStateOf<SavedPlace?>(null) }
+    val density = LocalDensity.current
     DisposableEffect(rootView) {
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, insets ->
             imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
@@ -289,6 +302,8 @@ fun HomeScreen() {
                         SavedPlace(type = "other", name = name, lat = lat, lon = lon, label = label, icon = icon)
                     }
                     if (parsed != savedPlaces) savedPlaces = parsed
+                    val pm = doc?.getString("paymentMethod")
+                    if (!pm.isNullOrBlank() && pm != paymentMethod) paymentMethod = pm
                 }
             }
             onDispose { reg?.remove() }
@@ -526,27 +541,28 @@ fun HomeScreen() {
                     .padding(start = 16.dp, top = 12.dp),
                 contentAlignment = Alignment.TopStart
             ) {
-                Button(
-                    onClick = {
-                        // Remove route and destination visuals
-                        mapView.mapboxMap.getStyle { style ->
-                            try { style.removeStyleLayer("route-layer") } catch (_: Exception) {}
-                            try { style.removeStyleSource("route-src") } catch (_: Exception) {}
-                            try { style.removeStyleLayer("dest-layer") } catch (_: Exception) {}
-                            try { style.removeStyleSource("dest-src") } catch (_: Exception) {}
-                        }
-                        // Reset UI state
-                        isRouteMode = false
-                        showSearchBar = true
-                        headerVisible = true
-                        selectedDestination = null
-                        searchQuery = ""
-                        suggestions = emptyList()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.95f)),
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF111827))
+                if (!isSearchingDriver) {
+                    Button(
+                        onClick = {
+                            mapView.mapboxMap.getStyle { style ->
+                                try { style.removeStyleLayer("route-layer") } catch (_: Exception) {}
+                                try { style.removeStyleSource("route-src") } catch (_: Exception) {}
+                                try { style.removeStyleLayer("dest-layer") } catch (_: Exception) {}
+                                try { style.removeStyleSource("dest-src") } catch (_: Exception) {}
+                            }
+                            isRouteMode = false
+                            showSearchBar = true
+                            headerVisible = true
+                            selectedDestination = null
+                            searchQuery = ""
+                            suggestions = emptyList()
+                            isSearchingDriver = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.95f)),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF111827))
+                    }
                 }
             }
             // Ride options overlay at bottom (dynamic prices)
@@ -565,11 +581,127 @@ fun HomeScreen() {
                     RideOptionData("Intu Bajaj", priceBajaj, eta, null, listOf(Color(0xFF1E1F47), Color(0xFF3A3B7B))),
                     RideOptionData("envio de paquete", priceEnvioPaquete, eta, null, listOf(Color(0xFF8E44AD), Color(0xFF9B59B6)))
                 )
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    RideOptionsSlider(
-                        options = options,
-                        selectedOptionName = selectedRide,
-                        onOptionSelected = { selectedRide = it }
+                if (!isSearchingDriver) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.96f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Brush.linearGradient(listOf(Color(0xFF0D9488), Color(0xFF0F172A)))) ,
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color.White)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = stringResource(com.intu.taxi.R.string.choose_your_trip), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF1C1C1E))
+                                    Text(text = stringResource(com.intu.taxi.R.string.swipe_more_options), style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            RideOptionsSlider(
+                                options = options,
+                                selectedOptionName = selectedRide,
+                                onOptionSelected = { selectedRide = it }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            var paymentExpanded by remember { mutableStateOf(false) }
+                            PaymentMethodRow(current = paymentMethod, onClick = { paymentExpanded = true })
+                            if (paymentExpanded) {
+                                AlertDialog(
+                                    onDismissRequest = { paymentExpanded = false },
+                                    title = { Text(stringResource(com.intu.taxi.R.string.payment_method_label)) },
+                                    text = {
+                                        PaymentMethodCompact(current = paymentMethod) { method ->
+                                            val uidNow = FirebaseAuth.getInstance().currentUser?.uid
+                                            paymentMethod = method
+                                            if (uidNow != null) FirebaseFirestore.getInstance().collection("users").document(uidNow).update(mapOf("paymentMethod" to method))
+                                        }
+                                    },
+                                    confirmButton = {
+                                        Button(onClick = { paymentExpanded = false }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text(stringResource(com.intu.taxi.R.string.ok)) }
+                                    }
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val uidNow = FirebaseAuth.getInstance().currentUser?.uid
+                                    val origin = lastUserLocation
+                                    val dest = selectedDestination
+                                    val rideType = selectedRide ?: "Intu Honda"
+                                    val priceSelected = when (rideType) {
+                                        "Intu Colectivo" -> priceColectivo
+                                        "espera y ahorra" -> priceEsperaYAhorra
+                                        "Intu Honda" -> priceHonda
+                                        "Intu Bajaj" -> priceBajaj
+                                        "envio de paquete" -> priceEnvioPaquete
+                                        else -> priceHonda
+                                    }
+                                    if (uidNow != null && origin != null && dest != null) {
+                                        val ref = FirebaseDatabase.getInstance().reference.child("rideRequests").push()
+                                        val key = ref.key
+                                        val data = mapOf(
+                                            "userId" to uidNow,
+                                            "status" to "searching",
+                                            "paymentMethod" to paymentMethod,
+                                            "rideType" to rideType,
+                                            "price" to priceSelected,
+                                            "originLat" to origin.latitude(),
+                                            "originLon" to origin.longitude(),
+                                            "destLat" to dest.latitude(),
+                                            "destLon" to dest.longitude(),
+                                            "createdAt" to ServerValue.TIMESTAMP
+                                        )
+                                        ref.setValue(data).addOnSuccessListener {
+                                            currentRideRequestId = key
+                                            isSearchingDriver = true
+                                            DebugLog.log("Ride request creado id=${key}")
+                                        }.addOnFailureListener { e ->
+                                            DebugLog.log("Error creando ride request: ${e.message}")
+                                        }
+                                    } else {
+                                        DebugLog.log("No se puede crear ride request: uid/origen/dest nulos")
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text(stringResource(com.intu.taxi.R.string.confirm_ride), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                } else {
+                    CreativeDriverSearchIndicator(
+                        isVisible = true,
+                        onCancel = {
+                            val key = currentRideRequestId
+                            if (key != null) {
+                                FirebaseDatabase.getInstance().reference.child("rideRequests").child(key).removeValue().addOnSuccessListener {
+                                    DebugLog.log("Ride request cancelado id=${key}")
+                                }.addOnFailureListener { e ->
+                                    DebugLog.log("Error cancelando ride request: ${e.message}")
+                                }
+                            }
+                            currentRideRequestId = null
+                            isSearchingDriver = false
+                            showSearchBar = true
+                            headerVisible = true
+                        }
                     )
                 }
             }
@@ -736,6 +868,27 @@ fun HomeScreen() {
                                 }
                             )
                         }
+                        val topPad = with(density) { 40.dp.toPx() }.toDouble()
+                        val bottomPad = with(density) { 420.dp.toPx() }.toDouble()
+                        val sidePad = 60.0
+                        val cam = mapboxMap.cameraForCoordinates(
+                            pts,
+                            EdgeInsets(topPad, sidePad, bottomPad, sidePad),
+                            null,
+                            null
+                        )
+                        mapboxMap.setCamera(cam)
+                        val centerPx = mapboxMap.pixelForCoordinate(mapboxMap.cameraState.center)
+                        val offsetY = with(density) { 140.dp.toPx() }.toDouble()
+                        val shiftedCenter = mapboxMap.coordinateForPixel(
+                            com.mapbox.maps.ScreenCoordinate(centerPx.x, centerPx.y + offsetY)
+                        )
+                        mapboxMap.setCamera(
+                            CameraOptions.Builder()
+                                .center(shiftedCenter)
+                                .zoom(kotlin.math.max(1.0, mapboxMap.cameraState.zoom - 0.6))
+                                .build()
+                        )
                         DebugLog.log("Ruta calculada y renderizada")
                     } else {
                         DebugLog.log("Sin coordenadas de ruta válidas")
@@ -861,6 +1014,131 @@ private fun QuickActionsSlider(places: List<SavedPlace>, onPlaceSelected: (Saved
             val baseIndex = idx % baseCount
             val p = places[baseIndex]
             QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p), onClick = { onPlaceSelected(p) })
+        }
+    }
+}
+
+@Composable
+private fun PaymentMethodCompact(current: String, onChange: (String) -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val isYape = current == "yape_plin"
+        val isCash = current == "efectivo"
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(
+                    if (isYape) Brush.horizontalGradient(listOf(Color(0xFF0D9488), Color(0xFF14B8A6)))
+                    else Brush.horizontalGradient(listOf(Color.White.copy(alpha = 0.92f), Color.White.copy(alpha = 0.92f)))
+                )
+                .border(if (isYape) 0.dp else 1.dp, Color(0xFFE5E7EB), shape)
+                .clickable(enabled = !isYape) { onChange("yape_plin") }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(com.intu.taxi.R.string.method_yape_plin),
+                color = if (isYape) Color.White else Color(0xFF374151),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (isYape) FontWeight.SemiBold else FontWeight.Medium
+            )
+        }
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(
+                    if (isCash) Brush.horizontalGradient(listOf(Color(0xFF0F172A), Color(0xFF1F2937)))
+                    else Brush.horizontalGradient(listOf(Color.White.copy(alpha = 0.92f), Color.White.copy(alpha = 0.92f)))
+                )
+                .border(if (isCash) 0.dp else 1.dp, Color(0xFFE5E7EB), shape)
+                .clickable(enabled = !isCash) { onChange("efectivo") }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(com.intu.taxi.R.string.method_cash),
+                color = if (isCash) Color.White else Color(0xFF374151),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (isCash) FontWeight.SemiBold else FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun PaymentMethodRow(current: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.96f))
+            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF8E44AD)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Outlined.Place, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+            Text(text = stringResource(com.intu.taxi.R.string.payment_method_label), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF1C1C1E))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+            Text(text = if (current == "yape_plin") stringResource(com.intu.taxi.R.string.method_yape_plin) else stringResource(com.intu.taxi.R.string.method_cash), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF374151))
+            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF6E6E73))
+        }
+    }
+}
+
+@Composable
+private fun SearchingDriverCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.96f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF0D9488), Color(0xFF0F172A)))) ,
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color.White)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(com.intu.taxi.R.string.searching_driver_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF1C1C1E))
+                    Text(text = stringResource(com.intu.taxi.R.string.searching_driver_subtitle), style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                }
+            }
+            CircularProgressIndicator(color = Color(0xFF0D9488))
         }
     }
 }

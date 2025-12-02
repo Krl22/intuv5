@@ -34,6 +34,12 @@
     <string name="privacy">Privacidad</string>
     <string name="debug">Debug</string>
     <string name="logout">Cerrar sesión</string>
+    <string name="payment_method_label">Método de pago</string>
+    <string name="confirm_ride">Confirmar viaje</string>
+    <string name="choose_your_trip">Elige tu viaje</string>
+    <string name="swipe_more_options">Desliza para ver más opciones</string>
+    <string name="searching_driver_title">Buscando conductor</string>
+    <string name="searching_driver_subtitle">Estamos encontrando un conductor cercano</string>
 
     <string name="vehicle_data_label">Datos del vehículo</string>
     <string name="year_label_prefix">Año </string>
