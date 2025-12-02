@@ -59,6 +59,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.layout.navigationBarsPadding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
@@ -89,6 +90,7 @@ import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
 import com.mapbox.maps.extension.style.layers.generated.circleLayer
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.layers.addLayer
+import kotlin.random.Random
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -337,27 +339,41 @@ fun DriverHomeScreen() {
                                                 val originLon = snap.child("originLon").getValue(Double::class.java) ?: 0.0
                                                 val destLat = snap.child("destLat").getValue(Double::class.java) ?: 0.0
                                                 val destLon = snap.child("destLon").getValue(Double::class.java) ?: 0.0
-                                                val curRef = db.child("currentRides").child(r.id)
-                                                val data = mapOf(
-                                                    "userId" to userId,
-                                                    "driverId" to uidNow,
-                                                    "status" to "active",
-                                                    "paymentMethod" to payment,
-                                                    "rideType" to rideType,
-                                                    "price" to price,
-                                                    "originLat" to originLat,
-                                                    "originLon" to originLon,
-                                                    "destLat" to destLat,
-                                                    "destLon" to destLon,
-                                                    "createdAt" to ServerValue.TIMESTAMP
-                                                )
-                                                curRef.setValue(data).addOnSuccessListener {
-                                                    currentRideId = r.id
-                                                    db.child("rideRequests").child(r.id).removeValue()
-                                                    db.child("driverAvailability").child(uidNow).removeValue()
-                                                    isSearching = false
-                                                    com.intu.taxi.ui.debug.DebugLog.log("Current ride creado id=${r.id}")
-                                                }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error creando current ride: ${e.message}") }
+                                                FirebaseFirestore.getInstance().collection("users").document(uidNow).get()
+                                                    .addOnSuccessListener { d ->
+                                                        val driverName = d.getString("firstName") ?: ""
+                                                        val driverPhoto = d.getString("photoUrl")
+                                                        val driverObj = d.get("driver") as? Map<*, *>
+                                                        val vehicleType = (d.getString("vehicleType") ?: (driverObj?.get("vehicleType") as? String) ?: "")
+                                                        val vehiclePlate = (d.getString("vehiclePlate") ?: (driverObj?.get("vehiclePlate") as? String) ?: "")
+                                                        val curRef = db.child("currentRides").child(r.id)
+                                                        val startCode = Random.nextInt(1000, 10000)
+                                                        val data = mutableMapOf<String, Any>(
+                                                            "userId" to userId,
+                                                            "driverId" to uidNow,
+                                                            "status" to "active",
+                                                            "startCode" to startCode,
+                                                            "paymentMethod" to payment,
+                                                            "rideType" to rideType,
+                                                            "price" to price,
+                                                            "originLat" to originLat,
+                                                            "originLon" to originLon,
+                                                            "destLat" to destLat,
+                                                            "destLon" to destLon,
+                                                            "createdAt" to ServerValue.TIMESTAMP
+                                                        )
+                                                        data["driverName"] = driverName
+                                                        if (!driverPhoto.isNullOrBlank()) data["driverPhoto"] = driverPhoto
+                                                        data["vehicleType"] = vehicleType
+                                                        data["vehiclePlate"] = vehiclePlate
+                                                        curRef.setValue(data).addOnSuccessListener {
+                                                            currentRideId = r.id
+                                                            db.child("rideRequests").child(r.id).removeValue()
+                                                            db.child("driverAvailability").child(uidNow).removeValue()
+                                                            isSearching = false
+                                                            com.intu.taxi.ui.debug.DebugLog.log("Current ride creado id=${r.id}")
+                                                        }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error creando current ride: ${e.message}") }
+                                                    }
                                             }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error leyendo request: ${e.message}") }
                                         }
                                     }
@@ -372,6 +388,7 @@ fun DriverHomeScreen() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .navigationBarsPadding()
                         .padding(bottom = 16.dp),
                     contentAlignment = Alignment.BottomCenter
                 ) {

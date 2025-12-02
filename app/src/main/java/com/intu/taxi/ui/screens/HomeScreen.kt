@@ -107,6 +107,8 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
@@ -263,6 +265,13 @@ fun HomeScreen() {
     var currentRideId by remember { mutableStateOf<String?>(null) }
     var driverLiveLocation by remember { mutableStateOf<Point?>(null) }
     var isCurrentRide by remember { mutableStateOf(false) }
+    var currentRideDriverId by remember { mutableStateOf<String?>(null) }
+    var currentRideDriverName by remember { mutableStateOf<String?>(null) }
+    var currentRidePaymentMethod by remember { mutableStateOf<String?>(null) }
+    var currentRideRideType by remember { mutableStateOf<String?>(null) }
+    var currentRidePrice by remember { mutableStateOf<Double?>(null) }
+    var currentRideVehicleType by remember { mutableStateOf<String?>(null) }
+    var currentRideVehiclePlate by remember { mutableStateOf<String?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -735,6 +744,7 @@ fun HomeScreen() {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .navigationBarsPadding()
                             .padding(bottom = 16.dp),
                         contentAlignment = Alignment.BottomCenter
                     ) {
@@ -804,6 +814,28 @@ fun HomeScreen() {
             while (isPinMode) {
                 pinCenter = mapView.mapboxMap.cameraState.center
                 delay(300)
+            }
+        }
+
+        if (isCurrentRide) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(10f),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Button(
+                    onClick = {},
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("Cancelar viaje", fontWeight = FontWeight.Bold)
+                }
             }
         }
         // Reverse geocode pin center into search field text
@@ -977,6 +1009,13 @@ fun HomeScreen() {
                     val first = snapshot.children.firstOrNull()
                     currentRideId = first?.key
                     isCurrentRide = currentRideId != null
+                    currentRideDriverId = first?.child("driverId")?.getValue(String::class.java)
+                    currentRidePaymentMethod = first?.child("paymentMethod")?.getValue(String::class.java)
+                    currentRideRideType = first?.child("rideType")?.getValue(String::class.java)
+                    currentRidePrice = first?.child("price")?.getValue(Double::class.java)
+                    currentRideDriverName = first?.child("driverName")?.getValue(String::class.java)
+                    currentRideVehicleType = first?.child("vehicleType")?.getValue(String::class.java)
+                    currentRideVehiclePlate = first?.child("vehiclePlate")?.getValue(String::class.java)
                     val dLoc = first?.child("driverLocation")
                     val dlat = dLoc?.child("lat")?.getValue(Double::class.java)
                     val dlon = dLoc?.child("lon")?.getValue(Double::class.java)
@@ -1038,6 +1077,56 @@ fun HomeScreen() {
         }
         mapView.location.addOnIndicatorPositionChangedListener(listener)
         onDispose { mapView.location.removeOnIndicatorPositionChangedListener(listener) }
+    }
+    if (isCurrentRide) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(10f),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+            ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF0D9488), Color(0xFF0F172A)))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color.White)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(text = (currentRideDriverName ?: "Conductor"), style = MaterialTheme.typography.titleMedium, color = Color(0xFF111827))
+                                val info = listOfNotNull(currentRideVehicleType, currentRideVehiclePlate, currentRidePaymentMethod).joinToString(" · ")
+                                Text(text = info.ifBlank { "" }, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                            }
+                        val p = currentRidePrice
+                        Text(text = if (p != null) String.format("$%.2f", p) else "$--", style = MaterialTheme.typography.titleSmall, color = Color(0xFF111827))
+                        }
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {},
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Cancelar viaje", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 
