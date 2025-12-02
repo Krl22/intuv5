@@ -19,6 +19,7 @@ fun DebugScreen() {
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Mensajes de debug (" + DebugLog.messages.size + ")", style = MaterialTheme.typography.titleMedium)
                 Button(onClick = { DebugLog.messages.clear() }) { Text("Limpiar") }
             }
         }
@@ -27,4 +28,3 @@ fun DebugScreen() {
         }
     }
 }
-

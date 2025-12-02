@@ -1,5 +1,8 @@
 package com.intu.taxi.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CreditCard
@@ -32,6 +36,10 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.PriceChange
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +51,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
  
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -66,6 +75,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
@@ -80,6 +90,7 @@ import com.google.firebase.firestore.FieldPath
 import android.app.Activity
 import androidx.compose.ui.platform.LocalContext
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.intu.taxi.R
@@ -93,9 +104,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import com.intu.taxi.ui.debug.DebugLog
 
 data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double, val label: String? = null, val icon: String? = null)
@@ -113,14 +126,22 @@ fun AccountScreen(
     val uid = FirebaseAuth.getInstance().currentUser?.uid
     var profile by remember { mutableStateOf<Map<String, Any>?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var lastProfileNonBalance by remember { mutableStateOf<Map<String, Any>?>(null) }
     DisposableEffect(uid) {
         val db = FirebaseFirestore.getInstance()
         val reg = if (uid != null) db.collection("users").document(uid).addSnapshotListener { doc, _ ->
-            profile = doc?.data
             loading = false
+            val data = doc?.data
+            val nonBalance = data?.filter { it.key != "balance" && it.key != "updatedAt" } ?: emptyMap()
+            val prev = lastProfileNonBalance
+            if (prev == null || nonBalance != prev) {
+                profile = data
+                lastProfileNonBalance = nonBalance
+            }
         } else null
         onDispose { reg?.remove() }
     }
+
 
     LaunchedEffect(pendingPickedPlace) {
         val p = pendingPickedPlace
@@ -163,7 +184,8 @@ fun AccountScreen(
         profile?.get("lastName") as? String ?: ""
     ).joinToString(" ").trim().ifEmpty { stringResource(R.string.account_title_fallback) }
     val email = profile?.get("email") as? String ?: ""
-    val phone = (profile?.get("fullNumber") as? String) ?: (profile?.get("number") as? String) ?: ""
+    val authPhoneNow = FirebaseAuth.getInstance().currentUser?.phoneNumber ?: ""
+    val phone = authPhoneNow.ifBlank { (profile?.get("fullNumber") as? String) ?: (profile?.get("number") as? String) ?: "" }
     val isPhoneLinked = FirebaseAuth.getInstance().currentUser?.phoneNumber?.isNotBlank() == true
     val initialGoogleLinked = FirebaseAuth.getInstance().currentUser?.providerData?.any { it.providerId == com.google.firebase.auth.GoogleAuthProvider.PROVIDER_ID } == true
     var isGoogleLinked by remember { mutableStateOf(initialGoogleLinked) }
@@ -197,7 +219,46 @@ fun AccountScreen(
                         FirebaseFirestore.getInstance().collection("users").document(uidSafe)
                             .set(mapOf("email" to mail), SetOptions.merge())
                     }
-                }?.addOnFailureListener { e -> linkStatus = "Error: ${e.message}" }
+                    com.intu.taxi.ui.debug.DebugLog.log("Google link success uid=${uidSafe} email=${mail}")
+                }?.addOnFailureListener { e ->
+                    if (e is FirebaseAuthUserCollisionException) {
+                        val prevUid = FirebaseAuth.getInstance().currentUser?.uid
+                        FirebaseAuth.getInstance().signInWithCredential(credential).addOnSuccessListener { authRes ->
+                            isGoogleLinked = true
+                            linkStatus = context.getString(R.string.google_linked_success)
+                            val uidSigned = authRes.user?.uid
+                            val mail = account.email
+                            if (uidSigned != null && mail != null) {
+                                FirebaseFirestore.getInstance().collection("users").document(uidSigned)
+                                    .set(mapOf("email" to mail), SetOptions.merge())
+                            }
+                            com.intu.taxi.ui.debug.DebugLog.log("Google collision resolved: signed in uid=${uidSigned} email=${mail}")
+                            val oldUid = prevUid
+                            if (oldUid != null && uidSigned != null && oldUid != uidSigned) {
+                                FirebaseFirestore.getInstance().collection("users").document(oldUid).get().addOnSuccessListener { oldDoc ->
+                                    val data = oldDoc.data
+                                    if (data != null) {
+                                        FirebaseFirestore.getInstance().collection("users").document(uidSigned)
+                                            .set(data, SetOptions.merge())
+                                        com.intu.taxi.ui.debug.DebugLog.log("Migrated Firestore data from ${oldUid} to ${uidSigned}")
+                                    }
+                                }
+                            }
+                            val existingPhone = phone
+                            val phoneLinkedNow = FirebaseAuth.getInstance().currentUser?.phoneNumber?.isNotBlank() == true
+                            if (!phoneLinkedNow && existingPhone.isNotBlank()) {
+                                com.intu.taxi.ui.debug.DebugLog.log("Trigger phone link for ${existingPhone}")
+                                onVerifyPhone(existingPhone)
+                            }
+                        }.addOnFailureListener { signErr ->
+                            linkStatus = "Error: ${signErr.message}"
+                            com.intu.taxi.ui.debug.DebugLog.log("Google collision sign-in failed: ${signErr.message}")
+                        }
+                    } else {
+                        linkStatus = "Error: ${e.message}"
+                        com.intu.taxi.ui.debug.DebugLog.log("Google link error: ${e.message}")
+                    }
+                }
             }
         }
     }
@@ -209,15 +270,13 @@ fun AccountScreen(
         }
     }
 
-    // Country selection: default from phone prefix or Firestore field if present
     val storedCountry = (profile?.get("country") as? String)?.lowercase()
     var country by remember {
         mutableStateOf(
-            when {
-                storedCountry == "peru" -> "peru"
-                storedCountry == "usa" -> "usa"
-                phone.startsWith("+51") -> "peru"
-                else -> "usa"
+            when (storedCountry) {
+                "peru" -> "peru"
+                "usa" -> "usa"
+                else -> "peru"
             }
         )
     }
@@ -240,6 +299,26 @@ fun AccountScreen(
         FirebaseFirestore.getInstance().collection("users").document(u)
             .set(mapOf("paymentMethod" to method), SetOptions.merge())
         paymentMethod = method
+    }
+
+    fun saveEmail(newEmail: String) {
+        val u = uid ?: return
+        FirebaseFirestore.getInstance().collection("users").document(u)
+            .set(mapOf("email" to newEmail), SetOptions.merge())
+        com.intu.taxi.ui.debug.DebugLog.log("Email saved in Firestore uid=${u} email=${newEmail}")
+        FirebaseAuth.getInstance().currentUser?.updateEmail(newEmail)?.addOnSuccessListener {
+            com.intu.taxi.ui.debug.DebugLog.log("FirebaseAuth email updated")
+        }?.addOnFailureListener { e ->
+            com.intu.taxi.ui.debug.DebugLog.log("FirebaseAuth email update failed: ${e.message}")
+        }
+    }
+
+    var headerVisible by remember { mutableStateOf(false) }
+    var contentVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(uid) {
+        headerVisible = true
+        delay(200)
+        contentVisible = true
     }
 
     androidx.compose.foundation.layout.Box(
@@ -286,38 +365,53 @@ fun AccountScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                ClientHeader(
-                    title = name,
-                    photoUrl = photoUrl,
-                    onChangePhoto = { imagePicker.launch("image/*") },
-                    showDriverToggle = ((profile?.get("driverApproved") as? Boolean) == true),
-                    driverMode = ((profile?.get("driverMode") as? Boolean) == true),
-                    onToggleDriver = { enabled ->
-                        val u2 = uid
-                        if (u2 != null) FirebaseFirestore.getInstance().collection("users").document(u2).set(mapOf("driverMode" to enabled), SetOptions.merge())
-                    }
-                )
+                AnimatedVisibility(visible = headerVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { -it })) {
+                    ClientHeader(
+                        title = name,
+                        photoUrl = photoUrl,
+                        onChangePhoto = { imagePicker.launch("image/*") },
+                        showDriverToggle = ((profile?.get("driverApproved") as? Boolean) == true),
+                        driverMode = ((profile?.get("driverMode") as? Boolean) == true),
+                        onToggleDriver = { enabled ->
+                            val u2 = uid
+                            if (u2 != null) FirebaseFirestore.getInstance().collection("users").document(u2).set(mapOf("driverMode" to enabled), SetOptions.merge())
+                        }
+                    )
+                }
             }
             
             item {
-                ContactCard(
-                    email = email,
-                    phone = phone,
-                    isPhoneLinked = isPhoneLinked,
-                    onVerifyPhone = onVerifyPhone,
-                    isGoogleLinked = isGoogleLinked,
-                    onLinkGoogle = {
-                        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                            .requestIdToken(context.getString(R.string.default_web_client_id))
-                            .requestEmail()
-                            .build()
-                        val client = GoogleSignIn.getClient(context, gso)
-                        googleLauncher.launch(client.signInIntent)
-                    },
-                    linkStatus = linkStatus
-                )
+                AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) {
+                    ContactCard(
+                        email = email,
+                        phone = phone,
+                        isPhoneLinked = isPhoneLinked,
+                        onVerifyPhone = onVerifyPhone,
+                        isGoogleLinked = isGoogleLinked,
+                        onLinkGoogle = {
+                            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                .requestIdToken(context.getString(R.string.default_web_client_id))
+                                .requestEmail()
+                                .build()
+                            val client = GoogleSignIn.getClient(context, gso)
+                            googleLauncher.launch(client.signInIntent)
+                        },
+                        linkStatus = linkStatus,
+                        onEditEmail = { saveEmail(it) },
+                        paymentMethod = paymentMethod,
+                        onChangePayment = { savePayment(it) },
+                        profile = profile,
+                        onAddPlace = {
+                            DebugLog.log("Account: botón Agregar pulsado")
+                            showAddPlace = true
+                        },
+                        country = country,
+                        onSelectCountry = { saveCountry(it) },
+                        onOpenDebug = onDebugClick,
+                        onStartDriver = onStartDriver
+                    )
+                }
             }
-            item { PaymentCard(country = country, method = paymentMethod, onChange = { savePayment(it) }) }
             if (((profile?.get("driverApproved") as? Boolean) == true) && ((profile?.get("driverMode") as? Boolean) == true)) {
                 val driverData = profile?.get("driver") as? Map<String, Any> ?: emptyMap()
                 val vehiclePhoto = (driverData["vehiclePhotoUrl"] as? String) ?: ""
@@ -326,39 +420,16 @@ fun AccountScreen(
                 val vehicleModel = (driverData["vehicleModel"] as? String) ?: ""
                 val vehicleYear = (driverData["vehicleYear"] as? String) ?: ""
                 val vehiclePlate = (driverData["vehiclePlate"] as? String) ?: ""
-                val balance = (profile?.get("balance") as? Number)?.toDouble() ?: 0.0
-                item { DriverBalanceCard(balance = balance, onRecharge = onStartTopUp) }
-                item { VehicleCard(photoUrl = vehiclePhoto, type = vehicleType, brand = vehicleBrand, model = vehicleModel, year = vehicleYear, plate = vehiclePlate) }
-                item { DriverStatsCard() }
-                item { DriverRecentTripsCard() }
+                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverBalanceCardLive(uid = uid, onRecharge = onStartTopUp) } }
+                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { VehicleCard(photoUrl = vehiclePhoto, type = vehicleType, brand = vehicleBrand, model = vehicleModel, year = vehicleYear, plate = vehiclePlate) } }
+                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverStatsCard() } }
+                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverRecentTripsCard() } }
             }
-            item {
-                SavedPlacesCard(
-                    profile = profile,
-                    onSetHome = { onStartPickPlace("home") },
-                    onSetWork = { onStartPickPlace("work") },
-                    onAddPlace = {
-                        DebugLog.log("Account: botón Agregar pulsado")
-                        showAddPlace = true
-                    }
-                )
-            }
-            item { CountrySelector(country = country, onSelect = { saveCountry(it) }) }
-            item { LanguageSelector() }
-            item { SupportPrivacyCard(onDebugClick, onLogout) }
-            item {
-                DriverSection(
-                    uid = uid,
-                    approved = ((profile?.get("driverApproved") as? Boolean) == true),
-                    driverMode = ((profile?.get("driverMode") as? Boolean) == true),
-                    submitted = profile?.get("driver") != null,
-                    onStartDriver = onStartDriver,
-                    onToggleMode = { enabled ->
-                        val u = uid
-                        if (u != null) FirebaseFirestore.getInstance().collection("users").document(u).set(mapOf("driverMode" to enabled), SetOptions.merge())
-                    }
-                )
-            }
+            
+            
+            
+            
+            item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { LogoutCard(onLogout = onLogout) } }
         }
     }
     if (showAddPlace) {
@@ -368,49 +439,84 @@ fun AccountScreen(
             showAddPlace = false
         }
     }
+    DisposableEffect(uid) {
+        var reg: com.google.firebase.firestore.ListenerRegistration? = null
+        val u = uid
+        if (u != null) {
+            val q = FirebaseFirestore.getInstance().collection("topups")
+                .whereEqualTo("userId", u)
+                .whereEqualTo("isapproved", true)
+                .whereEqualTo("processed", false)
+            reg = q.addSnapshotListener { snaps, _ ->
+                val docs = snaps?.documents ?: emptyList()
+                docs.forEach { d ->
+                    val data = d.data ?: return@forEach
+                    val amount = (data["amount"] as? Number)?.toDouble() ?: return@forEach
+                    val db = FirebaseFirestore.getInstance()
+                    db.runTransaction { tx ->
+                        val userRef = db.collection("users").document(u)
+                        tx.update(userRef, mapOf("balance" to com.google.firebase.firestore.FieldValue.increment(amount)))
+                        tx.update(d.reference, mapOf("processed" to true, "approvedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()))
+                        null
+                    }.addOnSuccessListener {
+                        DebugLog.log("Topup aplicado +${amount}")
+                    }.addOnFailureListener { e ->
+                        DebugLog.log("Error aplicando topup: ${e.message}")
+                    }
+                }
+            }
+        }
+        onDispose { reg?.remove() }
+    }
 }
 
 @Composable
 private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> Unit, showDriverToggle: Boolean = false, driverMode: Boolean = false, onToggleDriver: (Boolean) -> Unit = {}) {
     val gradient = Brush.horizontalGradient(listOf(Color(0xFF0D9488), Color(0xFF0F172A)))
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.14f)),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
     ) {
         Box(modifier = Modifier.fillMaxWidth().background(gradient)) {
             if (showDriverToggle) {
-                Row(modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "Modo conductor", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.size(8.dp))
-                    androidx.compose.material3.Switch(checked = driverMode, onCheckedChange = onToggleDriver)
+                Row(modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp)) {
+                    RolePill(text = if (driverMode) "Conductor" else "Pasajero", onClick = { onToggleDriver(!driverMode) })
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0xFF0D9488), Color(0xFF22D3EE))
-                        )
-                    )
-                    .clickable { onChangePhoto() },
-                contentAlignment = Alignment.Center
-            ) {
-                if (photoUrl.isNotBlank()) {
-                    AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(56.dp).clip(CircleShape))
-                } else {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(Color.Transparent)
+                        .border(3.dp, Color.White.copy(alpha = 0.9f), CircleShape)
+                        .clickable { onChangePhoto() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(74.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(Color(0xFF0D9488), Color(0xFF22D3EE))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (photoUrl.isNotBlank()) {
+                            AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(74.dp).clip(CircleShape))
+                        } else {
+                            Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
+                        }
+                    }
                 }
-            }
-            Spacer(Modifier.size(16.dp))
-            Column {
                 Text(
                     title,
                     style = MaterialTheme.typography.titleLarge.copy(
@@ -418,14 +524,67 @@ private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> U
                         fontWeight = FontWeight.Bold
                     )
                 )
-                Text(
-                    stringResource(R.string.client_since),
-                    style = MaterialTheme.typography.bodyMedium.copy(color = Color.White.copy(alpha = 0.85f))
-                )
-            }
-            Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun ModeToggle(checked: Boolean, onToggle: (Boolean) -> Unit) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.18f))
+            .border(1.dp, Color.White.copy(alpha = 0.35f), shape)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val driverSelected = checked
+        val passengerSelected = !checked
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(if (driverSelected) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                .clickable { onToggle(true) }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = if (driverSelected) Color(0xFF10B981) else Color.White)
+                Text(text = "Conductor", color = if (driverSelected) Color.White else Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(if (passengerSelected) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                .clickable { onToggle(false) }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Filled.Person, contentDescription = null, tint = if (passengerSelected) Color(0xFF3B82F6) else Color.White)
+                Text(text = "Pasajero", color = if (passengerSelected) Color.White else Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RolePill(text: String, onClick: (() -> Unit)? = null) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.22f))
+            .border(1.dp, Color.White.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .let { if (onClick != null) it.clickable { onClick() } else it },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text, color = Color.White, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -476,38 +635,418 @@ private fun ContactCard(
     onVerifyPhone: (String) -> Unit,
     isGoogleLinked: Boolean,
     onLinkGoogle: () -> Unit,
-    linkStatus: String
+    linkStatus: String,
+    onEditEmail: (String) -> Unit,
+    paymentMethod: String,
+    onChangePayment: (String) -> Unit,
+    profile: Map<String, Any>?,
+    onAddPlace: () -> Unit,
+    country: String,
+    onSelectCountry: (String) -> Unit,
+    onOpenDebug: () -> Unit,
+    onStartDriver: () -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(8.dp),
+        elevation = CardDefaults.cardElevation(12.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(stringResource(R.string.contact_label), style = MaterialTheme.typography.titleMedium)
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        var paymentExpanded by remember { mutableStateOf(false) }
+        var placesExpanded by remember { mutableStateOf(false) }
+        var countryExpanded by remember { mutableStateOf(false) }
+        var languageExpanded by remember { mutableStateOf(false) }
+        var helpPrivacyExpanded by remember { mutableStateOf(false) }
+        var showProfilePhotoDialog by remember { mutableStateOf(false) }
+        var showDeletePlaceDialog by remember { mutableStateOf(false) }
+        var placeToDelete by remember { mutableStateOf<Map<String, Any>?>(null) }
+        val hasProfilePhoto = ((profile?.get("photoUrl") as? String)?.isNotBlank() == true)
+        var emailExpanded by remember { mutableStateOf(false) }
+        var emailInput by remember { mutableStateOf(email) }
+        Column(Modifier.fillMaxWidth().padding(8.dp)) {
             ListItem(
-                headlineContent = { Text(email.ifEmpty { stringResource(R.string.no_email) }) },
-                leadingContent = { Icon(Icons.Filled.Email, contentDescription = null, tint = Color(0xFF0F172A)) },
+                modifier = Modifier.let { if (!isGoogleLinked) it.clickable { emailExpanded = true } else it },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE6F2FF)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Email, contentDescription = null, tint = Color(0xFF0F172A))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.email_label)) },
+                supportingContent = { Text(email.ifEmpty { stringResource(R.string.no_email) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 trailingContent = {
-                    if (!isGoogleLinked) {
-                        OutlinedButton(onClick = onLinkGoogle) { Text(stringResource(R.string.link_google)) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val verified = email.isNotEmpty()
+                        Text(if (verified) stringResource(R.string.verified) else stringResource(R.string.add_label), color = if (verified) Color(0xFF10B981) else Color.Gray, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
                     }
                 }
             )
+            if (emailExpanded && !isGoogleLinked) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = emailInput, onValueChange = { emailInput = it.trim() }, label = { Text(stringResource(R.string.email_label)) }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            onEditEmail(emailInput)
+                            emailExpanded = false
+                        }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)) { Text(stringResource(R.string.save)) }
+                        OutlinedButton(onClick = {
+                            emailExpanded = false
+                            emailInput = email
+                        }) { Text(stringResource(R.string.cancel)) }
+                    }
+                }
+            }
+            HorizontalDivider()
             ListItem(
-                headlineContent = { Text(phone.ifEmpty { stringResource(R.string.no_phone) }) },
-                leadingContent = { Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF0D9488)) },
-    
+                modifier = Modifier.clickable { if (!isPhoneLinked && phone.isNotEmpty()) onVerifyPhone(phone) },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE7FFF8)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF0D9488))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.phone_label)) },
+                supportingContent = { Text(phone.ifEmpty { stringResource(R.string.no_phone) }, color = Color.Gray) },
                 trailingContent = {
-                    if (!isPhoneLinked && phone.isNotEmpty()) {
-                        OutlinedButton(onClick = { onVerifyPhone(phone) }) { Text(stringResource(R.string.verify)) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (isPhoneLinked) stringResource(R.string.verified) else stringResource(R.string.verify), color = if (isPhoneLinked) Color(0xFF10B981) else Color.Gray, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
                     }
                 }
             )
-            if (linkStatus.isNotEmpty()) Text(linkStatus, style = MaterialTheme.typography.bodySmall)
+            HorizontalDivider()
+            ListItem(
+                modifier = Modifier.clickable { if (!isGoogleLinked) onLinkGoogle() },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFEFF0FF)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Link, contentDescription = null, tint = Color(0xFF4F46E5))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.google_account_label)) },
+                supportingContent = { Text(if (isGoogleLinked) stringResource(R.string.linked) else stringResource(R.string.not_linked), color = Color.Gray) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (isGoogleLinked) stringResource(R.string.linked) else stringResource(R.string.link_action), color = if (isGoogleLinked) Color(0xFF10B981) else Color(0xFF0F172A), style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+            )
+            HorizontalDivider()
+            ListItem(
+                modifier = Modifier.clickable { paymentExpanded = !paymentExpanded },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE6F2FF)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.CreditCard, contentDescription = null, tint = Color(0xFF0F172A))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.payment_label)) },
+                supportingContent = {
+                    Text(
+                        when (paymentMethod) {
+                            "yape_plin" -> stringResource(R.string.method_selected_yape_plin)
+                            else -> stringResource(R.string.method_selected_cash)
+                        },
+                        color = Color.Gray
+                    )
+                },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.see), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+            )
+            if (paymentExpanded) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PaymentPill(
+                            label = stringResource(R.string.method_yape_plin),
+                            selected = paymentMethod == "yape_plin",
+                            accent = Color(0xFF0D9488),
+                            leading = {
+                                YapePlinBubbleIcon(selected = paymentMethod == "yape_plin")
+                            }
+                        ) { onChangePayment("yape_plin") }
+                        PaymentPill(
+                            label = stringResource(R.string.method_cash),
+                            selected = paymentMethod == "efectivo",
+                            accent = Color(0xFF0F172A),
+                            leading = {
+                                Icon(
+                                    Icons.Filled.AttachMoney,
+                                    contentDescription = null,
+                                    tint = if (paymentMethod == "efectivo") Color.White else Color(0xFF0F172A)
+                                )
+                            }
+                        ) { onChangePayment("efectivo") }
+                    }
+                }
+            }
+            HorizontalDivider()
+            val sp = profile?.get("savedPlaces") as? Map<String, Any> ?: emptyMap()
+            val places = (sp["places"] as? List<*>) ?: emptyList<Any>()
+            ListItem(
+                modifier = Modifier.clickable { placesExpanded = !placesExpanded },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE7F3EE)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFF0D9488))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.saved_places_label)) },
+                supportingContent = { Text(if (places.isEmpty()) "No hay lugares guardados" else "${places.size} guardados", color = Color.Gray) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.see), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+            )
+            if (placesExpanded) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (places.isEmpty()) {
+                        Text(stringResource(R.string.no_saved_places), style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                    } else {
+                        places.forEach { any ->
+                            val m = any as? Map<String, Any> ?: emptyMap()
+                            val name = (m["label"] as? String)?.takeIf { it.isNotBlank() } ?: (m["name"] as? String ?: "")
+                            val iconStr = (m["icon"] as? String) ?: "marker"
+                            val leading = when (iconStr) {
+                                "home" -> Icons.Filled.Home
+                                "work" -> Icons.Filled.Work
+                                "school" -> Icons.Filled.School
+                                "shopping" -> Icons.Filled.LocalMall
+                                "food" -> Icons.Filled.Restaurant
+                                "cafe" -> Icons.Filled.LocalCafe
+                                "hospital" -> Icons.Filled.LocalHospital
+                                "package" -> Icons.Filled.LocalShipping
+                                "star" -> Icons.Filled.Star
+                                "favorite" -> Icons.Filled.Favorite
+                                else -> Icons.Filled.DirectionsCar
+                            }
+                            ListItem(
+                                headlineContent = { Text(name) },
+                                leadingContent = { Icon(leading, contentDescription = null, tint = Color(0xFF0D9488)) },
+                                trailingContent = {
+                                    OutlinedButton(onClick = {
+                                        placeToDelete = m
+                                        showDeletePlaceDialog = true
+                                    }) { Text(stringResource(R.string.delete)) }
+                                }
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onAddPlace) { Text(stringResource(R.string.add)) }
+                    }
+                    if (showDeletePlaceDialog) {
+                        AlertDialog(
+                            onDismissRequest = {
+                                showDeletePlaceDialog = false
+                                placeToDelete = null
+                            },
+                            title = { Text("Eliminar lugar") },
+                            text = { Text("¿Deseas eliminar este lugar guardado?") },
+                            confirmButton = {
+                                Button(onClick = {
+                                    val uid = FirebaseAuth.getInstance().currentUser?.uid
+                                    val m = placeToDelete
+                                    if (uid != null && m != null) {
+                                        FirebaseFirestore.getInstance().collection("users").document(uid)
+                                            .update(FieldPath.of("savedPlaces", "places"), FieldValue.arrayRemove(m))
+                                        DebugLog.log("Account: lugar eliminado -> ${m["name"]}")
+                                    }
+                                    showDeletePlaceDialog = false
+                                    placeToDelete = null
+                                }) { Text("Eliminar") }
+                            },
+                            dismissButton = {
+                                OutlinedButton(onClick = {
+                                    showDeletePlaceDialog = false
+                                    placeToDelete = null
+                                }) { Text("Cancelar") }
+                            }
+                        )
+                    }
+                }
+            }
+            HorizontalDivider()
+            ListItem(
+                modifier = Modifier.clickable { countryExpanded = !countryExpanded },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE6F2FF)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Work, contentDescription = null, tint = Color(0xFF0F172A))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.country_label)) },
+                supportingContent = { Text(if (country == "peru") stringResource(R.string.country_peru) else stringResource(R.string.country_usa), color = Color.Gray) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.see), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+            )
+            if (countryExpanded) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PaymentPill(label = stringResource(R.string.country_peru), selected = country == "peru", accent = Color(0xFF0D9488)) { onSelectCountry("peru") }
+                    PaymentPill(label = stringResource(R.string.country_usa), selected = country == "usa", accent = Color(0xFF0F172A), enabled = false) { }
+                }
+            }
+            HorizontalDivider()
+            val ctx = LocalContext.current
+            ListItem(
+                modifier = Modifier.clickable { languageExpanded = !languageExpanded },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFEFF0FF)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFF4F46E5))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.language_label)) },
+                supportingContent = { Text(stringResource(R.string.language_label), color = Color.Gray) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.see), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+            )
+            if (languageExpanded) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PaymentPill(label = stringResource(R.string.language_es), selected = true, accent = Color(0xFF0D9488)) {
+                        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("es"))
+                        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("lang_user_set", true).apply()
+                        (ctx as? Activity)?.recreate()
+                    }
+                    PaymentPill(label = stringResource(R.string.language_en), selected = false, accent = Color(0xFF0F172A)) {
+                        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
+                        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("lang_user_set", true).apply()
+                        (ctx as? Activity)?.recreate()
+                    }
+                }
+            }
+            HorizontalDivider()
+            val approved = ((profile?.get("driverApproved") as? Boolean) == true)
+            ListItem(
+                modifier = Modifier.clickable {
+                    if (!approved) {
+                        if (!hasProfilePhoto) showProfilePhotoDialog = true else onStartDriver()
+                    }
+                },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE7FFF8)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.drive_and_earn_section)) },
+                supportingContent = { if (!approved) Text(stringResource(R.string.driver_complete_data), color = Color.Gray) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!approved) {
+                            Text(stringResource(R.string.earn_action), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.size(4.dp))
+                            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
+                        } else {
+                            Text(stringResource(R.string.linked), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            )
+            HorizontalDivider()
+            ListItem(
+                modifier = Modifier.clickable { helpPrivacyExpanded = !helpPrivacyExpanded },
+                leadingContent = {
+                    Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFFDF2E9)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFF0F172A))
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.support_privacy_label)) },
+                supportingContent = { Text(stringResource(R.string.support_privacy_desc), color = Color.Gray) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.see), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.size(4.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+            )
+            if (helpPrivacyExpanded) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = { }) { Text(stringResource(R.string.help_center)) }
+                    OutlinedButton(onClick = { }) { Text(stringResource(R.string.privacy)) }
+                    OutlinedButton(onClick = onOpenDebug) { Text(stringResource(R.string.debug)) }
+                }
+            }
+            if (showProfilePhotoDialog) {
+                AlertDialog(
+                    onDismissRequest = { showProfilePhotoDialog = false },
+                    title = { Text(stringResource(R.string.profile_photo_required_title)) },
+                    text = { Text(stringResource(R.string.profile_photo_required_message)) },
+                    confirmButton = {
+                        Button(onClick = { showProfilePhotoDialog = false }) { Text(stringResource(R.string.ok)) }
+                    }
+                )
+            }
+            
+            if (linkStatus.isNotEmpty()) Text(linkStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
         }
+    }
+}
+
+@Composable
+private fun PaymentPill(label: String, selected: Boolean, accent: Color, leading: (@Composable () -> Unit)? = null, enabled: Boolean = true, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    val bg = if (selected) Brush.horizontalGradient(listOf(accent, accent.copy(alpha = 0.85f))) else Brush.horizontalGradient(listOf(Color.White, Color.White))
+    val borderColor = if (selected) Color.Transparent else Color(0xFFE5E7EB)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(bg)
+            .border(1.dp, borderColor, shape)
+            .let { if (enabled) it.clickable { onClick() } else it }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (leading != null) leading()
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium.copy(color = if (!enabled) Color(0xFF9CA3AF) else if (selected) Color.White else Color(0xFF374151), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+        )
+    }
+}
+
+@Composable
+private fun YapePlinBubbleIcon(selected: Boolean) {
+    val bubbleColor = Color(0xFF18D6C7)
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .drawBehind {
+                val tail = Path().apply {
+                    moveTo(0f, size.height * 0.55f)
+                    lineTo(0f, size.height)
+                    lineTo(size.width * 0.25f, size.height * 0.8f)
+                    close()
+                }
+                drawPath(tail, bubbleColor)
+            }
+            .clip(CircleShape)
+            .background(bubbleColor),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            "S/",
+            style = MaterialTheme.typography.labelSmall.copy(
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold
+            )
+        )
     }
 }
 
@@ -662,6 +1201,20 @@ private fun DriverBalanceCard(balance: Double, onRecharge: () -> Unit) {
 }
 
 @Composable
+private fun DriverBalanceCardLive(uid: String?, onRecharge: () -> Unit) {
+    var balance by remember { mutableStateOf(0.0) }
+    DisposableEffect(uid) {
+        val db = FirebaseFirestore.getInstance()
+        val reg = if (uid != null) db.collection("users").document(uid).addSnapshotListener { doc, _ ->
+            val b = (doc?.get("balance") as? Number)?.toDouble() ?: 0.0
+            balance = b
+        } else null
+        onDispose { reg?.remove() }
+    }
+    DriverBalanceCard(balance = balance, onRecharge = onRecharge)
+}
+
+@Composable
 private fun DriverRecentTripsCard() {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -716,7 +1269,10 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                     val full = countryCode + number
                     val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
                         override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-                            auth.currentUser?.linkWithCredential(credential)?.addOnSuccessListener {
+                            val current = auth.currentUser
+                            val hasPhone = current?.phoneNumber?.isNotBlank() == true
+                            val task = if (hasPhone) current?.updatePhoneNumber(credential) else current?.linkWithCredential(credential)
+                            task?.addOnSuccessListener {
                                 status = context.getString(R.string.phone_linked_success)
                                 val uidSafe = uid ?: return@addOnSuccessListener
                                 FirebaseFirestore.getInstance().collection("users").document(uidSafe)
@@ -727,10 +1283,11 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                                             "fullNumber" to full
                                         ), SetOptions.merge()
                                     )
+                                com.intu.taxi.ui.debug.DebugLog.log("Phone link success uid=${uidSafe} full=${full}")
                             }
                         }
-                        override fun onVerificationFailed(e: FirebaseException) { status = "Error: ${e.message ?: "verificación"}" }
-                        override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId = vid; status = context.getString(R.string.code_sent) }
+                        override fun onVerificationFailed(e: FirebaseException) { status = "Error: ${e.message ?: "verificación"}"; com.intu.taxi.ui.debug.DebugLog.log("Phone verify error: ${e.message}") }
+                        override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId = vid; status = context.getString(R.string.code_sent); com.intu.taxi.ui.debug.DebugLog.log("SMS code sent to ${full}") }
                     }
                     val options = PhoneAuthOptions.newBuilder(auth)
                         .setPhoneNumber(full)
@@ -744,7 +1301,10 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                     val vid = verificationId
                     if (vid != null) {
                         val cred = PhoneAuthProvider.getCredential(vid, code)
-                        auth.currentUser?.linkWithCredential(cred)?.addOnSuccessListener {
+                        val current = auth.currentUser
+                        val hasPhone = current?.phoneNumber?.isNotBlank() == true
+                        val task = if (hasPhone) current?.updatePhoneNumber(cred) else current?.linkWithCredential(cred)
+                        task?.addOnSuccessListener {
                             status = context.getString(R.string.phone_linked_success)
                             val full = countryCode + number
                             val uidSafe = uid ?: return@addOnSuccessListener
@@ -756,6 +1316,7 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                                         "fullNumber" to full
                                     ), SetOptions.merge()
                                 )
+                            com.intu.taxi.ui.debug.DebugLog.log("Phone link success (code) uid=${uidSafe} full=${full}")
                         }
                     }
                 }) { Text(stringResource(R.string.verify_and_link)) }
@@ -812,6 +1373,21 @@ private fun DriverSection(
                     Spacer(Modifier.weight(1f))
                     androidx.compose.material3.Switch(checked = driverMode, onCheckedChange = onToggleMode)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogoutCard(onLogout: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A), contentColor = Color.White)) {
+                Text(stringResource(R.string.logout))
             }
         }
     }

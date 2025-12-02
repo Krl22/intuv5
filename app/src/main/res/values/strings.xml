@@ -15,6 +15,18 @@
     <string name="no_phone">No number</string>
     <string name="verify">Verify</string>
 
+    <string name="email_label">Correo electrónico</string>
+    <string name="verified">Verificado</string>
+    <string name="add_label">Añadir</string>
+    <string name="google_account_label">Cuenta de Google</string>
+    <string name="linked">Vinculado</string>
+    <string name="not_linked">No vinculado</string>
+    <string name="link_action">Vincular</string>
+    <string name="test_label">Test</string>
+    <string name="test_support">Opción para prueba de colapso</string>
+    <string name="see">Ver</string>
+    <string name="test_content">Este es un panel de prueba desplegable.</string>
+
     <string name="payment_label">Payment</string>
     <string name="method_yape_plin">Yape/Plin</string>
     <string name="method_cash">Cash</string>
@@ -34,6 +46,13 @@
     <string name="privacy">Privacy</string>
     <string name="debug">Debug</string>
     <string name="logout">Sign out</string>
+    <string name="save">Guardar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="add">Add</string>
+    <string name="no_saved_places">No saved places</string>
+    <string name="saved_count">Saved: %1$d</string>
+    <string name="support_privacy_desc">Help center and privacy</string>
+    <string name="delete">Eliminar</string>
 
     <string name="vehicle_data_label">Vehicle details</string>
     <string name="year_label_prefix">Year </string>
@@ -47,7 +66,7 @@
     <string name="gain_with_intu">Earn with Intu</string>
     <string name="driver_review_pending">Application under review</string>
     <string name="driver_review_help">Your application is being reviewed</string>
-    <string name="driver_complete_data">Complete vehicle and license information</string>
+    <string name="driver_complete_data">Complete your details</string>
     <string name="driver_mode_label">Driver mode</string>
 
     <string name="change_photo">Change photo</string>
@@ -70,7 +89,8 @@
     <string name="verify_and_link">Verify and link</string>
     <string name="phone_linked_success">Phone linked</string>
     <string name="code_sent">Code sent</string>
-    <string name="drive_and_earn_section">Drive and earn</string>
+    <string name="drive_and_earn_section">Earn with Intu</string>
+    <string name="earn_action">Earn</string>
     <string name="services_this_month">12 services this month</string>
     <string name="trips_this_month">3 trips this month</string>
     <string name="nav_home">Home</string>
@@ -79,4 +99,7 @@
     <string name="quick_home">Casa</string>
     <string name="quick_work">Trabajo</string>
     <string name="quick_marker">Marcador</string>
+    <string name="profile_photo_required_title">Add profile photo</string>
+    <string name="profile_photo_required_message">You need a profile photo before becoming a driver.</string>
+    <string name="ok">OK</string>
 </resources>

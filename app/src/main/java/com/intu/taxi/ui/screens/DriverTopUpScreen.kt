@@ -73,7 +73,8 @@ fun DriverTopUpScreen(onFinished: () -> Unit) {
                                 "amount" to amt,
                                 "method" to method.value,
                                 "screenshotUrl" to url.toString(),
-                                "status" to "pending",
+                                "isapproved" to false,
+                                "processed" to false,
                                 "createdAt" to FieldValue.serverTimestamp()
                             )
                             FirebaseFirestore.getInstance().collection("topups").add(data)

@@ -44,25 +44,30 @@ fun TaxiApp() {
     val navController = rememberNavController()
     val uid = FirebaseAuth.getInstance().currentUser?.uid
     val driverActive = remember { mutableStateOf(false) }
+    val lastActive = remember { mutableStateOf<Boolean?>(null) }
 
     DisposableEffect(uid) {
         val reg = if (uid != null) FirebaseFirestore.getInstance().collection("users").document(uid).addSnapshotListener { doc, _ ->
             val approved = doc?.getBoolean("driverApproved") == true
             val mode = doc?.getBoolean("driverMode") == true
             val active = approved && mode
-            driverActive.value = active
-            val currentRoute = navController.currentBackStackEntry?.destination?.route
-            if (active && currentRoute != "driverHome") {
-                navController.navigate("driverHome") {
-                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
-                }
-            } else if (!active && currentRoute == "driverHome") {
-                navController.navigate(BottomNavItem.Home.route) {
-                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
+            val prev = lastActive.value
+            if (prev != active) {
+                lastActive.value = active
+                driverActive.value = active
+                val currentRoute = navController.currentBackStackEntry?.destination?.route
+                if (active && currentRoute != "driverHome") {
+                    navController.navigate("driverHome") {
+                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                } else if (!active && currentRoute == "driverHome") {
+                    navController.navigate(BottomNavItem.Home.route) {
+                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             }
         } else null

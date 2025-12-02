@@ -257,7 +257,8 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
                                             "vehiclePhotoUrl" to photoUrl.value
                                         ),
                                         "driverApproved" to false,
-                                        "driverMode" to false
+                                        "driverMode" to false,
+                                        "balance" to 0.0
                                     )
                                     FirebaseFirestore.getInstance().collection("users").document(uid)
                                         .set(data, SetOptions.merge())

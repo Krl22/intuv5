@@ -253,6 +253,8 @@ fun HomeScreen() {
     val focusManager = LocalFocusManager.current
     var imeVisible by remember { mutableStateOf(false) }
     var savedPlaces by remember { mutableStateOf<List<SavedPlace>>(emptyList()) }
+    var showAddPlace by remember { mutableStateOf(false) }
+    var savedPlaceQueued by remember { mutableStateOf<SavedPlace?>(null) }
     DisposableEffect(rootView) {
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, insets ->
             imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
@@ -273,7 +275,8 @@ fun HomeScreen() {
             if (uid != null) {
                 val docRef = FirebaseFirestore.getInstance().collection("users").document(uid)
                 reg = docRef.addSnapshotListener { doc, _ ->
-                    firstName = doc?.getString("firstName") ?: ""
+                    val newFirstName = doc?.getString("firstName") ?: ""
+                    if (newFirstName != firstName) firstName = newFirstName
                     val sp = doc?.get("savedPlaces") as? Map<*, *>
                     val placesAny = sp?.get("places") as? List<*> ?: emptyList<Any>()
                     val parsed = placesAny.mapNotNull { any ->
@@ -285,7 +288,7 @@ fun HomeScreen() {
                         val icon = m["icon"] as? String
                         SavedPlace(type = "other", name = name, lat = lat, lon = lon, label = label, icon = icon)
                     }
-                    savedPlaces = parsed
+                    if (parsed != savedPlaces) savedPlaces = parsed
                 }
             }
             onDispose { reg?.remove() }
@@ -295,6 +298,23 @@ fun HomeScreen() {
             if (showSearchBar && !isRouteMode) {
                 isSearchFocused = imeVisible
                 if (!imeVisible) suggestions = emptyList()
+            }
+        }
+        LaunchedEffect(savedPlaceQueued) {
+            val p = savedPlaceQueued
+            val uid = FirebaseAuth.getInstance().currentUser?.uid
+            if (p != null && uid != null) {
+                val placeMap = mutableMapOf<String, Any>(
+                    "name" to p.name,
+                    "lat" to p.lat,
+                    "lon" to p.lon
+                )
+                if (!p.label.isNullOrBlank()) placeMap["label"] = p.label!!
+                if (!p.icon.isNullOrBlank()) placeMap["icon"] = p.icon!!
+                FirebaseFirestore.getInstance().collection("users").document(uid)
+                    .update(com.google.firebase.firestore.FieldPath.of("savedPlaces", "places"), com.google.firebase.firestore.FieldValue.arrayUnion(placeMap))
+                DebugLog.log("Home: lugar guardado -> ${p.name}")
+                savedPlaceQueued = null
             }
         }
         LaunchedEffect(searchQuery) {
@@ -473,7 +493,25 @@ fun HomeScreen() {
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
-                        RowQuickActions(places = savedPlaces)
+                        RowQuickActions(
+                            places = savedPlaces,
+                            onAddPlace = { showAddPlace = true },
+                            onPlaceSelected = { p ->
+                                val destPoint = Point.fromLngLat(p.lon, p.lat)
+                                mapView.mapboxMap.setCamera(
+                                    CameraOptions.Builder()
+                                        .center(destPoint)
+                                        .zoom(14.0)
+                                        .build()
+                                )
+                                selectedDestination = destPoint
+                                showSearchBar = false
+                                isSearchFocused = false
+                                searchQuery = ""
+                                suggestions = emptyList()
+                                isRouteMode = true
+                            }
+                        )
                     }
                 }
             }
@@ -609,6 +647,13 @@ fun HomeScreen() {
         BackHandler(enabled = isSearchFocused && !isRouteMode) {
             focusManager.clearFocus()
         }
+        if (showAddPlace) {
+            AddPlaceScreen(defaultType = "other") { place ->
+                DebugLog.log("Home(AddPlace): seleccionado ${place.name}")
+                savedPlaceQueued = place
+                showAddPlace = false
+            }
+        }
     }
 
     // Load style once and center on first location update
@@ -723,7 +768,7 @@ fun HomeScreen() {
 }
 
 @Composable
-fun RowQuickActions(places: List<SavedPlace>) {
+fun RowQuickActions(places: List<SavedPlace>, onAddPlace: () -> Unit = {}, onPlaceSelected: (SavedPlace) -> Unit = {}) {
     val count = places.size
     Box(modifier = Modifier.fillMaxWidth(0.7f), contentAlignment = Alignment.Center) {
         if (count == 0) {
@@ -731,7 +776,7 @@ fun RowQuickActions(places: List<SavedPlace>) {
                 modifier = Modifier.padding(horizontal = 8.dp),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
             ) {
-                QuickActionButton(icon = Icons.Filled.Add, label = "Agregar")
+                QuickActionButton(icon = Icons.Filled.Add, label = "Agregar", onClick = onAddPlace)
             }
         } else if (count <= 3) {
             androidx.compose.foundation.layout.Row(
@@ -739,23 +784,23 @@ fun RowQuickActions(places: List<SavedPlace>) {
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
             ) {
                 places.forEach { p ->
-                    QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p))
+                    QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p), onClick = { onPlaceSelected(p) })
                 }
             }
         } else {
-            QuickActionsSlider(places)
+            QuickActionsSlider(places, onPlaceSelected)
         }
     }
 }
 
 @Composable
-fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit = {}) {
     Box(
         modifier = Modifier
             .size(width = 76.dp, height = 68.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(Color.White.copy(alpha = 0.18f))
-            .clickable { },
+            .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -796,7 +841,7 @@ private fun displayLabel(place: SavedPlace?): String {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun QuickActionsSlider(places: List<SavedPlace>) {
+private fun QuickActionsSlider(places: List<SavedPlace>, onPlaceSelected: (SavedPlace) -> Unit) {
     val baseCount = places.size
     val loopFactor = 50
     val totalCount = baseCount * loopFactor
@@ -815,7 +860,7 @@ private fun QuickActionsSlider(places: List<SavedPlace>) {
         items(totalCount) { idx ->
             val baseIndex = idx % baseCount
             val p = places[baseIndex]
-            QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p))
+            QuickActionButton(icon = quickIcon(p.icon), label = displayLabel(p), onClick = { onPlaceSelected(p) })
         }
     }
 }
