@@ -260,6 +260,9 @@ fun HomeScreen() {
     var paymentMethod by remember { mutableStateOf("efectivo") }
     var isSearchingDriver by remember { mutableStateOf(false) }
     var currentRideRequestId by remember { mutableStateOf<String?>(null) }
+    var currentRideId by remember { mutableStateOf<String?>(null) }
+    var driverLiveLocation by remember { mutableStateOf<Point?>(null) }
+    var isCurrentRide by remember { mutableStateOf(false) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -374,47 +377,49 @@ fun HomeScreen() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.55f)
-                    .drawBehind {
-                        val teal = Color(0xFF08817E)
-                        val indigo = Color(0xFF1E1F47)
-                        val shiftY = size.height * headerShiftFraction
-                        withTransform({ translate(left = 0f, top = -shiftY) }) {
-                            drawRect(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(teal, indigo),
-                                    center = Offset(0.1f, 0.1f),
-                                    radius = size.height * 0.9f
-                                ),
-                                size = Size(width = size.width, height = size.height)
-                            )
-                            withTransform({
-                                scale(scaleX = 1.6f, scaleY = 1.0f, pivot = Offset.Zero)
-                            }) {
+                    .then(
+                        if (!isCurrentRide) Modifier.drawBehind {
+                            val teal = Color(0xFF08817E)
+                            val indigo = Color(0xFF1E1F47)
+                            val shiftY = size.height * headerShiftFraction
+                            withTransform({ translate(left = 0f, top = -shiftY) }) {
                                 drawRect(
                                     brush = Brush.radialGradient(
-                                        colorStops = arrayOf(
-                                            0.00f to Color.White.copy(alpha = 1.0f),
-                                            0.70f to Color.White.copy(alpha = 1.0f),
-                                            0.75f to Color.White.copy(alpha = 0.95f),
-                                            0.80f to Color.White.copy(alpha = 0.85f),
-                                            0.85f to Color.White.copy(alpha = 0.70f),
-                                            0.90f to Color.White.copy(alpha = 0.45f),
-                                            0.95f to Color.White.copy(alpha = 0.25f),
-                                            1.00f to Color.Transparent
-                                        ),
-                                        center = Offset(0f, 0f),
-                                        radius = max(size.width, size.height)
+                                        colors = listOf(teal, indigo),
+                                        center = Offset(0.1f, 0.1f),
+                                        radius = size.height * 0.9f
                                     ),
-                                    size = Size(width = size.width, height = size.height),
-                                    blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                                    size = Size(width = size.width, height = size.height)
                                 )
+                                withTransform({
+                                    scale(scaleX = 1.6f, scaleY = 1.0f, pivot = Offset.Zero)
+                                }) {
+                                    drawRect(
+                                        brush = Brush.radialGradient(
+                                            colorStops = arrayOf(
+                                                0.00f to Color.White.copy(alpha = 1.0f),
+                                                0.70f to Color.White.copy(alpha = 1.0f),
+                                                0.75f to Color.White.copy(alpha = 0.95f),
+                                                0.80f to Color.White.copy(alpha = 0.85f),
+                                                0.85f to Color.White.copy(alpha = 0.70f),
+                                                0.90f to Color.White.copy(alpha = 0.45f),
+                                                0.95f to Color.White.copy(alpha = 0.25f),
+                                                1.00f to Color.Transparent
+                                            ),
+                                            center = Offset(0f, 0f),
+                                            radius = max(size.width, size.height)
+                                        ),
+                                        size = Size(width = size.width, height = size.height),
+                                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                                    )
+                                }
                             }
-                        }
-                    },
+                        } else Modifier
+                    ),
                 contentAlignment = Alignment.TopCenter
             ) {
             AnimatedVisibility(
-                visible = headerVisible && !isRouteMode,
+                visible = headerVisible && !isRouteMode && !isCurrentRide,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { -it })
             ) {
                 Column(
@@ -425,7 +430,7 @@ fun HomeScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     AnimatedVisibility(
-                        visible = !(isSearchFocused || isPinMode),
+                        visible = !(isSearchFocused || isPinMode || isCurrentRide),
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -447,7 +452,7 @@ fun HomeScreen() {
                             Spacer(modifier = Modifier.height(20.dp))
                         }
                     }
-                    if (showSearchBar) {
+                    if (showSearchBar && !isCurrentRide) {
                           SearchBar(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
@@ -462,7 +467,7 @@ fun HomeScreen() {
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
                     }
-                    if (showSearchBar && !isPinMode && suggestions.isNotEmpty()) {
+                    if (showSearchBar && !isCurrentRide && !isPinMode && suggestions.isNotEmpty()) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -504,7 +509,7 @@ fun HomeScreen() {
                         Spacer(modifier = Modifier.height(25.dp))
                     }
                     AnimatedVisibility(
-                        visible = !(isSearchFocused || isPinMode),
+                        visible = !(isSearchFocused || isPinMode || isCurrentRide),
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -541,7 +546,7 @@ fun HomeScreen() {
                     .padding(start = 16.dp, top = 12.dp),
                 contentAlignment = Alignment.TopStart
             ) {
-                if (!isSearchingDriver) {
+                if (!isSearchingDriver && !isCurrentRide) {
                     Button(
                         onClick = {
                             mapView.mapboxMap.getStyle { style ->
@@ -581,7 +586,7 @@ fun HomeScreen() {
                     RideOptionData("Intu Bajaj", priceBajaj, eta, null, listOf(Color(0xFF1E1F47), Color(0xFF3A3B7B))),
                     RideOptionData("envio de paquete", priceEnvioPaquete, eta, null, listOf(Color(0xFF8E44AD), Color(0xFF9B59B6)))
                 )
-                if (!isSearchingDriver) {
+                if (!isSearchingDriver && !isCurrentRide) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -685,7 +690,7 @@ fun HomeScreen() {
                             }
                         }
                     }
-                } else {
+                } else if (isSearchingDriver) {
                     CreativeDriverSearchIndicator(
                         isVisible = true,
                         onCancel = {
@@ -703,6 +708,48 @@ fun HomeScreen() {
                             headerVisible = true
                         }
                     )
+                } else if (isCurrentRide) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.96f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(text = "Viaje en curso", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "Viendo ubicación del conductor", style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = {},
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text("Cancelar viaje", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Button(
+                            onClick = {},
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(52.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("Cancelar viaje", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -917,6 +964,80 @@ fun HomeScreen() {
         onDispose {
             mapView.location.removeOnIndicatorPositionChangedListener(onFirstIndicator)
         }
+    }
+
+    // Suscripción al current ride del cliente
+    DisposableEffect(Unit) {
+        val uidNow = FirebaseAuth.getInstance().currentUser?.uid
+        var listener: com.google.firebase.database.ValueEventListener? = null
+        if (uidNow != null) {
+            val q = FirebaseDatabase.getInstance().reference.child("currentRides").orderByChild("userId").equalTo(uidNow)
+            listener = object : com.google.firebase.database.ValueEventListener {
+                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                    val first = snapshot.children.firstOrNull()
+                    currentRideId = first?.key
+                    isCurrentRide = currentRideId != null
+                    val dLoc = first?.child("driverLocation")
+                    val dlat = dLoc?.child("lat")?.getValue(Double::class.java)
+                    val dlon = dLoc?.child("lon")?.getValue(Double::class.java)
+                    if (dlat != null && dlon != null) driverLiveLocation = Point.fromLngLat(dlon, dlat)
+                    if (currentRideId != null) {
+                        val reqId = currentRideRequestId
+                        if (reqId != null) {
+                            FirebaseDatabase.getInstance().reference.child("rideRequests").child(reqId)
+                                .removeValue()
+                                .addOnSuccessListener { DebugLog.log("Ride request eliminado al entrar a current ride id=${reqId}") }
+                                .addOnFailureListener { e -> DebugLog.log("Error eliminando ride request (current ride): ${e.message}") }
+                        }
+                        currentRideRequestId = null
+                        isSearchingDriver = false
+                        isRouteMode = false
+                        showSearchBar = true
+                        headerVisible = true
+                    }
+                }
+                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+            }
+            q.addValueEventListener(listener!!)
+        }
+        onDispose { if (listener != null) FirebaseDatabase.getInstance().reference.child("currentRides").removeEventListener(listener!!) }
+    }
+
+    // Renderizar icono del conductor
+    LaunchedEffect(driverLiveLocation) {
+        val p = driverLiveLocation
+        if (p != null) {
+            val srcId = "driver-src"
+            val layerId = "driver-layer"
+            mapboxMap.getStyle { style ->
+                try { style.removeStyleLayer(layerId) } catch (_: Exception) {}
+                try { style.removeStyleSource(srcId) } catch (_: Exception) {}
+                style.addSource(geoJsonSource(srcId) { feature(Feature.fromGeometry(p)) })
+                style.addLayer(
+                    circleLayer(layerId, srcId) {
+                        circleRadius(7.0)
+                        circleColor("#0D9488")
+                        circleStrokeColor("#FFFFFF")
+                        circleStrokeWidth(2.0)
+                    }
+                )
+            }
+        }
+    }
+
+    // Actualizar posición del cliente en current ride
+    DisposableEffect(currentRideId) {
+        val rid = currentRideId
+        val listener = object : com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener {
+            override fun onIndicatorPositionChanged(point: Point) {
+                if (rid != null) {
+                    FirebaseDatabase.getInstance().reference.child("currentRides").child(rid)
+                        .child("clientLocation").setValue(mapOf("lat" to point.latitude(), "lon" to point.longitude()))
+                }
+            }
+        }
+        mapView.location.addOnIndicatorPositionChangedListener(listener)
+        onDispose { mapView.location.removeOnIndicatorPositionChangedListener(listener) }
     }
 }
 

@@ -30,6 +30,7 @@ import com.mapbox.maps.MapView
 import com.mapbox.maps.Style
 import com.mapbox.maps.CameraOptions
 import com.mapbox.geojson.Point
+import com.mapbox.geojson.Feature
 import androidx.compose.runtime.DisposableEffect
 import com.mapbox.maps.plugin.scalebar.scalebar
 import com.mapbox.maps.plugin.locationcomponent.location
@@ -84,6 +85,10 @@ import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.Query
+import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
+import com.mapbox.maps.extension.style.layers.generated.circleLayer
+import com.mapbox.maps.extension.style.sources.addSource
+import com.mapbox.maps.extension.style.layers.addLayer
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -130,6 +135,9 @@ fun DriverHomeScreen() {
     var lastDriverLocation by remember { mutableStateOf<Point?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var rideRequests by remember { mutableStateOf<List<RideRequestItem>>(emptyList()) }
+    var currentRideId by remember { mutableStateOf<String?>(null) }
+    var clientLiveLocation by remember { mutableStateOf<Point?>(null) }
+    var isCurrentRide by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
@@ -158,7 +166,7 @@ fun DriverHomeScreen() {
                 .fillMaxHeight(0.6f)
                 .padding(top = 0.dp)
                 .then(
-                    if (!isSearching) Modifier.drawBehind {
+                    if (!isSearching && !isCurrentRide) Modifier.drawBehind {
                         val teal = Color(0xFF08817E)
                         val indigo = Color(0xFF1E1F47)
                         val shiftY = size.height * headerShiftFraction
@@ -199,7 +207,7 @@ fun DriverHomeScreen() {
             contentAlignment = Alignment.TopCenter
         ) {
             AnimatedVisibility(
-                visible = headerVisible && !isSearching,
+                visible = headerVisible && !isSearching && !isCurrentRide,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { -it })
             ) {
                 Column(
@@ -237,49 +245,51 @@ fun DriverHomeScreen() {
                     .align(Alignment.TopCenter)
                     .offset(y = animatedY)
             ) {
-                AnimatedGradientButton(
-                    isSearching = isSearching,
-                    onClick = {
-                        val uidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-                        if (!isSearching) {
-                            if (uidNow != null) {
-                                val loc = lastDriverLocation
-                                val data = mapOf(
-                                    "driverId" to uidNow,
-                                    "status" to "available",
-                                    "rideType" to driverVehicleType.ifBlank { "Intu Honda" },
-                                    "lat" to (loc?.latitude() ?: 0.0),
-                                    "lon" to (loc?.longitude() ?: 0.0),
-                                    "updatedAt" to ServerValue.TIMESTAMP
-                                )
-                                FirebaseDatabase.getInstance().reference.child("driverAvailability").child(uidNow)
-                                    .setValue(data)
-                                    .addOnSuccessListener {
-                                        availabilityKey = uidNow
-                                        isSearching = true
-                                        com.intu.taxi.ui.debug.DebugLog.log("Driver availability creado uid=${uidNow}")
-                                    }
-                                    .addOnFailureListener { e ->
-                                        com.intu.taxi.ui.debug.DebugLog.log("Error creando availability: ${e.message}")
-                                    }
+                if (!isCurrentRide) {
+                    AnimatedGradientButton(
+                        isSearching = isSearching,
+                        onClick = {
+                            val uidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                            if (!isSearching) {
+                                if (uidNow != null) {
+                                    val loc = lastDriverLocation
+                                    val data = mapOf(
+                                        "driverId" to uidNow,
+                                        "status" to "available",
+                                        "rideType" to driverVehicleType.ifBlank { "Intu Honda" },
+                                        "lat" to (loc?.latitude() ?: 0.0),
+                                        "lon" to (loc?.longitude() ?: 0.0),
+                                        "updatedAt" to ServerValue.TIMESTAMP
+                                    )
+                                    FirebaseDatabase.getInstance().reference.child("driverAvailability").child(uidNow)
+                                        .setValue(data)
+                                        .addOnSuccessListener {
+                                            availabilityKey = uidNow
+                                            isSearching = true
+                                            com.intu.taxi.ui.debug.DebugLog.log("Driver availability creado uid=${uidNow}")
+                                        }
+                                        .addOnFailureListener { e ->
+                                            com.intu.taxi.ui.debug.DebugLog.log("Error creando availability: ${e.message}")
+                                        }
+                                }
+                            } else {
+                                val key = availabilityKey ?: uidNow
+                                if (key != null) {
+                                    FirebaseDatabase.getInstance().reference.child("driverAvailability").child(key)
+                                        .removeValue()
+                                        .addOnSuccessListener {
+                                            com.intu.taxi.ui.debug.DebugLog.log("Driver availability eliminado uid=${key}")
+                                        }
+                                        .addOnFailureListener { e ->
+                                            com.intu.taxi.ui.debug.DebugLog.log("Error eliminando availability: ${e.message}")
+                                        }
+                                }
+                                availabilityKey = null
+                                isSearching = false
                             }
-                        } else {
-                            val key = availabilityKey ?: uidNow
-                            if (key != null) {
-                                FirebaseDatabase.getInstance().reference.child("driverAvailability").child(key)
-                                    .removeValue()
-                                    .addOnSuccessListener {
-                                        com.intu.taxi.ui.debug.DebugLog.log("Driver availability eliminado uid=${key}")
-                                    }
-                                    .addOnFailureListener { e ->
-                                        com.intu.taxi.ui.debug.DebugLog.log("Error eliminando availability: ${e.message}")
-                                    }
-                            }
-                            availabilityKey = null
-                            isSearching = false
                         }
-                    }
-                )
+                    )
+                }
             }
 
             AnimatedVisibility(
@@ -316,17 +326,65 @@ fun DriverHomeScreen() {
                                     onAccept = {
                                         val uidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
                                         if (uidNow != null) {
-                                            FirebaseDatabase.getInstance().reference.child("rideRequests").child(r.id)
-                                                .updateChildren(mapOf(
+                                            val db = FirebaseDatabase.getInstance().reference
+                                            val reqRef = db.child("rideRequests").child(r.id)
+                                            reqRef.get().addOnSuccessListener { snap ->
+                                                val userId = snap.child("userId").getValue(String::class.java) ?: return@addOnSuccessListener
+                                                val payment = snap.child("paymentMethod").getValue(String::class.java) ?: "efectivo"
+                                                val rideType = snap.child("rideType").getValue(String::class.java) ?: "Intu Honda"
+                                                val price = snap.child("price").getValue(Double::class.java) ?: 0.0
+                                                val originLat = snap.child("originLat").getValue(Double::class.java) ?: 0.0
+                                                val originLon = snap.child("originLon").getValue(Double::class.java) ?: 0.0
+                                                val destLat = snap.child("destLat").getValue(Double::class.java) ?: 0.0
+                                                val destLon = snap.child("destLon").getValue(Double::class.java) ?: 0.0
+                                                val curRef = db.child("currentRides").child(r.id)
+                                                val data = mapOf(
+                                                    "userId" to userId,
                                                     "driverId" to uidNow,
-                                                    "status" to "accepted"
-                                                ))
+                                                    "status" to "active",
+                                                    "paymentMethod" to payment,
+                                                    "rideType" to rideType,
+                                                    "price" to price,
+                                                    "originLat" to originLat,
+                                                    "originLon" to originLon,
+                                                    "destLat" to destLat,
+                                                    "destLon" to destLon,
+                                                    "createdAt" to ServerValue.TIMESTAMP
+                                                )
+                                                curRef.setValue(data).addOnSuccessListener {
+                                                    currentRideId = r.id
+                                                    db.child("rideRequests").child(r.id).removeValue()
+                                                    db.child("driverAvailability").child(uidNow).removeValue()
+                                                    isSearching = false
+                                                    com.intu.taxi.ui.debug.DebugLog.log("Current ride creado id=${r.id}")
+                                                }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error creando current ride: ${e.message}") }
+                                            }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error leyendo request: ${e.message}") }
                                         }
                                     }
                                 )
                                 Spacer(Modifier.height(8.dp))
                             }
                         }
+                    }
+                }
+            }
+            if (isCurrentRide) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 16.dp),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    androidx.compose.material3.Button(
+                        onClick = {},
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .height(52.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    ) {
+                        androidx.compose.material3.Text(text = "Cancelar viaje", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -403,6 +461,69 @@ fun DriverHomeScreen() {
                 rideRequests = enriched
             }
         }
+    }
+
+    // Suscripción al current ride del conductor
+    DisposableEffect(Unit) {
+        val uidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        var listener: ValueEventListener? = null
+        if (uidNow != null) {
+            val q = FirebaseDatabase.getInstance().reference.child("currentRides").orderByChild("driverId").equalTo(uidNow)
+            listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val first = snapshot.children.firstOrNull()
+                    currentRideId = first?.key
+                    isCurrentRide = currentRideId != null
+                    val cLoc = first?.child("clientLocation")
+                    val clat = cLoc?.child("lat")?.getValue(Double::class.java)
+                    val clon = cLoc?.child("lon")?.getValue(Double::class.java)
+                    if (clat != null && clon != null) clientLiveLocation = Point.fromLngLat(clon, clat)
+                }
+                override fun onCancelled(error: DatabaseError) {}
+            }
+            q.addValueEventListener(listener!!)
+        }
+        onDispose {
+            if (listener != null) FirebaseDatabase.getInstance().reference.child("currentRides").removeEventListener(listener!!)
+        }
+    }
+
+    // Renderizar icono del cliente en el mapa durante current ride
+    LaunchedEffect(clientLiveLocation) {
+        val p = clientLiveLocation
+        if (p != null) {
+            val srcId = "client-src"
+            val layerId = "client-layer"
+            mapboxMap.getStyle { style ->
+                try { style.removeStyleLayer(layerId) } catch (_: Exception) {}
+                try { style.removeStyleSource(srcId) } catch (_: Exception) {}
+                style.addSource(geoJsonSource(srcId) { feature(Feature.fromGeometry(p)) })
+                style.addLayer(
+                    circleLayer(layerId, srcId) {
+                        circleRadius(7.0)
+                        circleColor("#EF4444")
+                        circleStrokeColor("#FFFFFF")
+                        circleStrokeWidth(2.0)
+                    }
+                )
+            }
+        }
+    }
+
+    // Actualizar posición del conductor en current ride
+    DisposableEffect(currentRideId) {
+        val rid = currentRideId
+        val uidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        val listener = object : com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener {
+            override fun onIndicatorPositionChanged(point: Point) {
+                if (rid != null && uidNow != null) {
+                    FirebaseDatabase.getInstance().reference.child("currentRides").child(rid)
+                        .child("driverLocation").setValue(mapOf("lat" to point.latitude(), "lon" to point.longitude()))
+                }
+            }
+        }
+        mapView.location.addOnIndicatorPositionChangedListener(listener)
+        onDispose { mapView.location.removeOnIndicatorPositionChangedListener(listener) }
     }
 }
 
