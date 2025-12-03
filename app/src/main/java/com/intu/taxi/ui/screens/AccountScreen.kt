@@ -110,6 +110,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import com.intu.taxi.ui.debug.DebugLog
+import com.intu.taxi.BuildConfig
 
 data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double, val label: String? = null, val icon: String? = null)
 
@@ -994,6 +995,7 @@ private fun ContactCard(
             }
             
             if (linkStatus.isNotEmpty()) Text(linkStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+            Text("Versión app: " + BuildConfig.APP_VERSION_TAG, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
         }
     }
 }

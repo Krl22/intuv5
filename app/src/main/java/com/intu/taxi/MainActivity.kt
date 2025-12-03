@@ -27,6 +27,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.view.animation.AccelerateDecelerateInterpolator
+import com.google.firebase.ktx.Firebase
+import com.google.firebase.functions.ktx.functions
+import com.intu.taxi.ui.debug.DebugLog
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,6 +63,14 @@ class MainActivity : AppCompatActivity() {
                 })
                 start()
             }
+        }
+        if (BuildConfig.DEBUG && BuildConfig.USE_FUNCTIONS_EMULATOR) {
+            val host = getString(R.string.functions_emulator_host)
+            val port = getString(R.string.functions_emulator_port).toIntOrNull() ?: 5001
+            DebugLog.log("Functions emulador habilitado en " + host + ":" + port)
+            Firebase.functions("us-central1").useEmulator(host, port)
+        } else {
+            DebugLog.log("Functions en producción")
         }
         setContent {
             IntuTheme(darkTheme = false, dynamicColor = false) {

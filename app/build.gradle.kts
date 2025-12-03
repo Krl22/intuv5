@@ -51,8 +51,16 @@ android {
         if (file.exists()) file.inputStream().use { load(it) }
     }
     val mapboxPublicToken = localProps.getProperty("MAPBOX_PUBLIC_TOKEN") ?: ""
+    val functionsEmuHost = localProps.getProperty("FUNCTIONS_EMULATOR_HOST") ?: "10.0.2.2"
+    val functionsEmuPort = localProps.getProperty("FUNCTIONS_EMULATOR_PORT") ?: "5001"
+    val functionsEmuEnabled = (localProps.getProperty("FUNCTIONS_EMULATOR_ENABLED") ?: "false").lowercase() == "true"
     defaultConfig {
         resValue("string", "mapbox_access_token", mapboxPublicToken)
+        resValue("string", "functions_emulator_host", functionsEmuHost)
+        resValue("string", "functions_emulator_port", functionsEmuPort)
+        resValue("string", "functions_emulator_enabled", functionsEmuEnabled.toString())
+        buildConfigField("boolean", "USE_FUNCTIONS_EMULATOR", functionsEmuEnabled.toString())
+        buildConfigField("String", "APP_VERSION_TAG", "\"1.01\"")
     }
 }
 
@@ -74,6 +82,7 @@ dependencies {
     implementation(libs.firebase.database.ktx)
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.storage.ktx)
+    implementation("com.google.firebase:firebase-functions-ktx")
     implementation(libs.coil.compose)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.splashscreen)
