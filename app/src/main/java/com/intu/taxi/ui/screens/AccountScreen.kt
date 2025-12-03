@@ -110,6 +110,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import com.intu.taxi.ui.debug.DebugLog
+import com.intu.taxi.BuildConfig
 
 data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double, val label: String? = null, val icon: String? = null)
 
@@ -439,35 +440,7 @@ fun AccountScreen(
             showAddPlace = false
         }
     }
-    DisposableEffect(uid) {
-        var reg: com.google.firebase.firestore.ListenerRegistration? = null
-        val u = uid
-        if (u != null) {
-            val q = FirebaseFirestore.getInstance().collection("topups")
-                .whereEqualTo("userId", u)
-                .whereEqualTo("isapproved", true)
-                .whereEqualTo("processed", false)
-            reg = q.addSnapshotListener { snaps, _ ->
-                val docs = snaps?.documents ?: emptyList()
-                docs.forEach { d ->
-                    val data = d.data ?: return@forEach
-                    val amount = (data["amount"] as? Number)?.toDouble() ?: return@forEach
-                    val db = FirebaseFirestore.getInstance()
-                    db.runTransaction { tx ->
-                        val userRef = db.collection("users").document(u)
-                        tx.update(userRef, mapOf("balance" to com.google.firebase.firestore.FieldValue.increment(amount)))
-                        tx.update(d.reference, mapOf("processed" to true, "approvedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()))
-                        null
-                    }.addOnSuccessListener {
-                        DebugLog.log("Topup aplicado +${amount}")
-                    }.addOnFailureListener { e ->
-                        DebugLog.log("Error aplicando topup: ${e.message}")
-                    }
-                }
-            }
-        }
-        onDispose { reg?.remove() }
-    }
+    // Topups: ahora se procesan en el server via Cloud Functions (processTopup)
 }
 
 @Composable
@@ -994,6 +967,7 @@ private fun ContactCard(
             }
             
             if (linkStatus.isNotEmpty()) Text(linkStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+            Text("Versión app: " + BuildConfig.APP_VERSION_TAG, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
         }
     }
 }
