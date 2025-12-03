@@ -440,35 +440,7 @@ fun AccountScreen(
             showAddPlace = false
         }
     }
-    DisposableEffect(uid) {
-        var reg: com.google.firebase.firestore.ListenerRegistration? = null
-        val u = uid
-        if (u != null) {
-            val q = FirebaseFirestore.getInstance().collection("topups")
-                .whereEqualTo("userId", u)
-                .whereEqualTo("isapproved", true)
-                .whereEqualTo("processed", false)
-            reg = q.addSnapshotListener { snaps, _ ->
-                val docs = snaps?.documents ?: emptyList()
-                docs.forEach { d ->
-                    val data = d.data ?: return@forEach
-                    val amount = (data["amount"] as? Number)?.toDouble() ?: return@forEach
-                    val db = FirebaseFirestore.getInstance()
-                    db.runTransaction { tx ->
-                        val userRef = db.collection("users").document(u)
-                        tx.update(userRef, mapOf("balance" to com.google.firebase.firestore.FieldValue.increment(amount)))
-                        tx.update(d.reference, mapOf("processed" to true, "approvedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()))
-                        null
-                    }.addOnSuccessListener {
-                        DebugLog.log("Topup aplicado +${amount}")
-                    }.addOnFailureListener { e ->
-                        DebugLog.log("Error aplicando topup: ${e.message}")
-                    }
-                }
-            }
-        }
-        onDispose { reg?.remove() }
-    }
+    // Topups: ahora se procesan en el server via Cloud Functions (processTopup)
 }
 
 @Composable

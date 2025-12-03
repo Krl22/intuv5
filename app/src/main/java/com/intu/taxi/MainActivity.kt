@@ -64,11 +64,12 @@ class MainActivity : AppCompatActivity() {
                 start()
             }
         }
+        val functionsRegion = getString(R.string.functions_region)
         if (BuildConfig.DEBUG && BuildConfig.USE_FUNCTIONS_EMULATOR) {
             val host = getString(R.string.functions_emulator_host)
             val port = getString(R.string.functions_emulator_port).toIntOrNull() ?: 5001
             DebugLog.log("Functions emulador habilitado en " + host + ":" + port)
-            Firebase.functions("us-central1").useEmulator(host, port)
+            Firebase.functions(functionsRegion).useEmulator(host, port)
         } else {
             DebugLog.log("Functions en producción")
         }

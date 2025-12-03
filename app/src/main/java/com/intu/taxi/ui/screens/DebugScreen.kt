@@ -36,7 +36,7 @@ fun DebugScreen() {
                     val projectId = FirebaseApp.getInstance().options.projectId ?: ""
                     val target = "info-only: " + host + ":" + port
                     DebugLog.log("Llamando función ping... host=" + target + ", project=" + projectId)
-                    Firebase.functions("us-central1")
+                    Firebase.functions(ctx.getString(R.string.functions_region))
                         .getHttpsCallable("ping")
                         .call(mapOf("name" to "Intu"))
                         .addOnSuccessListener { result ->

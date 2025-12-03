@@ -43,9 +43,14 @@ import com.mapbox.maps.plugin.logo.logo
 import com.mapbox.maps.plugin.attribution.attribution
 import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
 import com.mapbox.maps.extension.style.layers.generated.circleLayer
-import com.mapbox.maps.extension.style.layers.generated.lineLayer
+import com.mapbox.maps.extension.style.layers.generated.circleLayer
+import com.mapbox.maps.extension.style.layers.generated.symbolLayer
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.layers.addLayer
+import com.mapbox.maps.extension.style.layers.generated.lineLayer
+import com.mapbox.maps.extension.style.layers.properties.generated.LineJoin
+import com.mapbox.maps.extension.style.image.addImage
+import android.graphics.BitmapFactory
 import androidx.compose.material3.Text
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -147,6 +152,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.intu.taxi.ui.screens.SavedPlace
+import com.google.firebase.ktx.Firebase
+import com.google.firebase.functions.ktx.functions
 
 @Composable
 fun SearchBar(
@@ -272,6 +279,7 @@ fun HomeScreen() {
     var currentRidePrice by remember { mutableStateOf<Double?>(null) }
     var currentRideVehicleType by remember { mutableStateOf<String?>(null) }
     var currentRideVehiclePlate by remember { mutableStateOf<String?>(null) }
+    var currentRideStartCode by remember { mutableStateOf<Int?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -732,7 +740,16 @@ fun HomeScreen() {
                             Text(text = "Viendo ubicación del conductor", style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
                             Spacer(Modifier.height(12.dp))
                             Button(
-                                onClick = {},
+                                onClick = {
+                                    val rid = currentRideId
+                                    if (rid != null) {
+                                        com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                            .getHttpsCallable("cancelRide")
+                                            .call(mapOf("currentRideId" to rid))
+                                            .addOnSuccessListener { DebugLog.log("CancelRide OK") }
+                                            .addOnFailureListener { e -> DebugLog.log("CancelRide error: ${e.message}") }
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
                                 shape = RoundedCornerShape(16.dp)
@@ -824,18 +841,27 @@ fun HomeScreen() {
                     .zIndex(10f),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                Button(
-                    onClick = {},
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Cancelar viaje", fontWeight = FontWeight.Bold)
-                }
+                        Button(
+                            onClick = {
+                                val rid = currentRideId
+                                if (rid != null) {
+                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                        .getHttpsCallable("cancelRide")
+                                        .call(mapOf("currentRideId" to rid))
+                                        .addOnSuccessListener { DebugLog.log("CancelRide OK") }
+                                        .addOnFailureListener { e -> DebugLog.log("CancelRide error: ${e.message}") }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                                .height(52.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("Cancelar viaje", fontWeight = FontWeight.Bold)
+                        }
             }
         }
         // Reverse geocode pin center into search field text
@@ -876,7 +902,7 @@ fun HomeScreen() {
     }
 
     // Update destination marker on selection
-    LaunchedEffect(selectedDestination) {
+    LaunchedEffect(selectedDestination, isCurrentRide) {
         val srcId = "dest-src"
         val layerId = "dest-layer"
         mapboxMap.getStyle { style ->
@@ -887,7 +913,7 @@ fun HomeScreen() {
                 style.removeStyleSource(srcId)
             } catch (_: Exception) {}
             val point = selectedDestination
-            if (point != null) {
+            if (point != null && !isCurrentRide) {
                 style.addSource(geoJsonSource(srcId) { feature(Feature.fromGeometry(point)) })
                 style.addLayer(
                     circleLayer(layerId, srcId) {
@@ -905,10 +931,10 @@ fun HomeScreen() {
     }
 
     // Calculate and render route when both user location and destination are available
-    LaunchedEffect(selectedDestination, lastUserLocation) {
+    LaunchedEffect(selectedDestination, lastUserLocation, isCurrentRide) {
         val origin = lastUserLocation
         val dest = selectedDestination
-        if (origin != null && dest != null && mapboxPublicToken.isNotBlank()) {
+        if (!isCurrentRide && origin != null && dest != null && mapboxPublicToken.isNotBlank()) {
             try {
                 val url = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.longitude()},${origin.latitude()};${dest.longitude()},${dest.latitude()}?alternatives=false&geometries=geojson&overview=full&language=es&access_token=${mapboxPublicToken}"
                 val json = withContext(Dispatchers.IO) {
@@ -981,6 +1007,53 @@ fun HomeScreen() {
         }
     }
 
+    LaunchedEffect(driverLiveLocation, lastUserLocation) {
+        val origin = lastUserLocation
+        val dest = driverLiveLocation
+        if (isCurrentRide && origin != null && dest != null && mapboxPublicToken.isNotBlank()) {
+            try {
+                val url = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.longitude()},${origin.latitude()};${dest.longitude()},${dest.latitude()}?alternatives=false&geometries=geojson&overview=full&language=es&access_token=${mapboxPublicToken}"
+                val json = withContext(Dispatchers.IO) { URL(url).openStream().bufferedReader().use { it.readText() } }
+                val obj = JSONObject(json)
+                val routes = obj.optJSONArray("routes") ?: JSONArray()
+                if (routes.length() > 0) {
+                    val route = routes.getJSONObject(0)
+                    val geometry = route.optJSONObject("geometry")
+                    val coords = geometry?.optJSONArray("coordinates")
+                    if (coords != null && coords.length() > 1) {
+                        val pts = mutableListOf<Point>()
+                        for (i in 0 until coords.length()) {
+                            val c = coords.getJSONArray(i)
+                            val lon = c.optDouble(0)
+                            val lat = c.optDouble(1)
+                            pts.add(Point.fromLngLat(lon, lat))
+                        }
+                        val line = LineString.fromLngLats(pts)
+                        val routeSrcId = "pax-driver-route-src"
+                        val routeLayerId = "pax-driver-route-layer"
+                        mapboxMap.getStyle { style ->
+                            try { style.removeStyleLayer("route-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("route-src") } catch (_: Exception) {}
+                            try { style.removeStyleLayer(routeLayerId) } catch (_: Exception) {}
+                            try { style.removeStyleSource(routeSrcId) } catch (_: Exception) {}
+                            style.addSource(geoJsonSource(routeSrcId) { feature(Feature.fromGeometry(line)) })
+                            style.addLayer(
+                                lineLayer(routeLayerId, routeSrcId) {
+                                    lineColor("#10B981")
+                                    lineWidth(5.0)
+                                    lineOpacity(0.9)
+                                }
+                            )
+                        }
+                        DebugLog.log("Ruta pasajero→conductor renderizada")
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.log("Error calculando ruta pax→driver: ${e.message}")
+            }
+        }
+    }
+
     val onFirstIndicator = remember {
         object : com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener {
             override fun onIndicatorPositionChanged(point: Point) {
@@ -1016,6 +1089,7 @@ fun HomeScreen() {
                     currentRideDriverName = first?.child("driverName")?.getValue(String::class.java)
                     currentRideVehicleType = first?.child("vehicleType")?.getValue(String::class.java)
                     currentRideVehiclePlate = first?.child("vehiclePlate")?.getValue(String::class.java)
+                    currentRideStartCode = first?.child("startCode")?.getValue(Int::class.java)
                     val dLoc = first?.child("driverLocation")
                     val dlat = dLoc?.child("lat")?.getValue(Double::class.java)
                     val dlon = dLoc?.child("lon")?.getValue(Double::class.java)
@@ -1052,14 +1126,28 @@ fun HomeScreen() {
                 try { style.removeStyleLayer(layerId) } catch (_: Exception) {}
                 try { style.removeStyleSource(srcId) } catch (_: Exception) {}
                 style.addSource(geoJsonSource(srcId) { feature(Feature.fromGeometry(p)) })
-                style.addLayer(
-                    circleLayer(layerId, srcId) {
-                        circleRadius(7.0)
-                        circleColor("#0D9488")
-                        circleStrokeColor("#FFFFFF")
-                        circleStrokeWidth(2.0)
-                    }
-                )
+                try { style.removeStyleImage("driver-icon") } catch (_: Exception) {}
+                val bmp = BitmapFactory.decodeResource(context.resources, com.intu.taxi.R.drawable.ic_driver_moto_png)
+                if (bmp != null) {
+                    style.addImage("driver-icon", bmp)
+                    style.addLayer(
+                        symbolLayer(layerId, srcId) {
+                            iconImage("driver-icon")
+                            iconAllowOverlap(true)
+                            iconIgnorePlacement(true)
+                            iconSize(0.07)
+                        }
+                    )
+                } else {
+                    style.addLayer(
+                        circleLayer(layerId, srcId) {
+                            circleRadius(7.0)
+                            circleColor("#0D9488")
+                            circleStrokeColor("#FFFFFF")
+                            circleStrokeWidth(2.0)
+                        }
+                    )
+                }
             }
         }
     }
@@ -1116,8 +1204,24 @@ fun HomeScreen() {
                         Text(text = if (p != null) String.format("$%.2f", p) else "$--", style = MaterialTheme.typography.titleSmall, color = Color(0xFF111827))
                         }
                     Spacer(Modifier.height(12.dp))
+                    val sc = currentRideStartCode
+                    if (sc != null) {
+                        Text(text = "Código: ${sc}", style = MaterialTheme.typography.titleMedium, color = Color(0xFF111827))
+                        Spacer(Modifier.height(6.dp))
+                        Text(text = "Comparte este código con el conductor cuando llegue", style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                        Spacer(Modifier.height(12.dp))
+                    }
                     Button(
-                        onClick = {},
+                        onClick = {
+                            val rid = currentRideId
+                            if (rid != null) {
+                                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                    .getHttpsCallable("cancelRide")
+                                    .call(mapOf("currentRideId" to rid))
+                                    .addOnSuccessListener { DebugLog.log("CancelRide OK") }
+                                    .addOnFailureListener { e -> DebugLog.log("CancelRide error: ${e.message}") }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
                         shape = RoundedCornerShape(16.dp)

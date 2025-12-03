@@ -31,6 +31,7 @@ import com.mapbox.maps.Style
 import com.mapbox.maps.CameraOptions
 import com.mapbox.geojson.Point
 import com.mapbox.geojson.Feature
+import com.mapbox.geojson.LineString
 import androidx.compose.runtime.DisposableEffect
 import com.mapbox.maps.plugin.scalebar.scalebar
 import com.mapbox.maps.plugin.locationcomponent.location
@@ -57,6 +58,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -91,6 +93,8 @@ import com.mapbox.maps.extension.style.layers.generated.circleLayer
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.layers.addLayer
 import kotlin.random.Random
+import com.google.firebase.ktx.Firebase
+import com.google.firebase.functions.ktx.functions
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -140,6 +144,9 @@ fun DriverHomeScreen() {
     var currentRideId by remember { mutableStateOf<String?>(null) }
     var clientLiveLocation by remember { mutableStateOf<Point?>(null) }
     var isCurrentRide by remember { mutableStateOf(false) }
+    var isArrived by remember { mutableStateOf(false) }
+    var showCodeDialog by remember { mutableStateOf(false) }
+    var codeInput by remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
@@ -326,56 +333,17 @@ fun DriverHomeScreen() {
                                 RideRequestFancyCard(
                                     item = r,
                                     onAccept = {
-                                        val uidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-                                        if (uidNow != null) {
-                                            val db = FirebaseDatabase.getInstance().reference
-                                            val reqRef = db.child("rideRequests").child(r.id)
-                                            reqRef.get().addOnSuccessListener { snap ->
-                                                val userId = snap.child("userId").getValue(String::class.java) ?: return@addOnSuccessListener
-                                                val payment = snap.child("paymentMethod").getValue(String::class.java) ?: "efectivo"
-                                                val rideType = snap.child("rideType").getValue(String::class.java) ?: "Intu Honda"
-                                                val price = snap.child("price").getValue(Double::class.java) ?: 0.0
-                                                val originLat = snap.child("originLat").getValue(Double::class.java) ?: 0.0
-                                                val originLon = snap.child("originLon").getValue(Double::class.java) ?: 0.0
-                                                val destLat = snap.child("destLat").getValue(Double::class.java) ?: 0.0
-                                                val destLon = snap.child("destLon").getValue(Double::class.java) ?: 0.0
-                                                FirebaseFirestore.getInstance().collection("users").document(uidNow).get()
-                                                    .addOnSuccessListener { d ->
-                                                        val driverName = d.getString("firstName") ?: ""
-                                                        val driverPhoto = d.getString("photoUrl")
-                                                        val driverObj = d.get("driver") as? Map<*, *>
-                                                        val vehicleType = (d.getString("vehicleType") ?: (driverObj?.get("vehicleType") as? String) ?: "")
-                                                        val vehiclePlate = (d.getString("vehiclePlate") ?: (driverObj?.get("vehiclePlate") as? String) ?: "")
-                                                        val curRef = db.child("currentRides").child(r.id)
-                                                        val startCode = Random.nextInt(1000, 10000)
-                                                        val data = mutableMapOf<String, Any>(
-                                                            "userId" to userId,
-                                                            "driverId" to uidNow,
-                                                            "status" to "active",
-                                                            "startCode" to startCode,
-                                                            "paymentMethod" to payment,
-                                                            "rideType" to rideType,
-                                                            "price" to price,
-                                                            "originLat" to originLat,
-                                                            "originLon" to originLon,
-                                                            "destLat" to destLat,
-                                                            "destLon" to destLon,
-                                                            "createdAt" to ServerValue.TIMESTAMP
-                                                        )
-                                                        data["driverName"] = driverName
-                                                        if (!driverPhoto.isNullOrBlank()) data["driverPhoto"] = driverPhoto
-                                                        data["vehicleType"] = vehicleType
-                                                        data["vehiclePlate"] = vehiclePlate
-                                                        curRef.setValue(data).addOnSuccessListener {
-                                                            currentRideId = r.id
-                                                            db.child("rideRequests").child(r.id).removeValue()
-                                                            db.child("driverAvailability").child(uidNow).removeValue()
-                                                            isSearching = false
-                                                            com.intu.taxi.ui.debug.DebugLog.log("Current ride creado id=${r.id}")
-                                                        }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error creando current ride: ${e.message}") }
-                                                    }
-                                            }.addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("Error leyendo request: ${e.message}") }
-                                        }
+                                        com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                            .getHttpsCallable("acceptRide")
+                                            .call(mapOf("rideRequestId" to r.id))
+                                            .addOnSuccessListener {
+                                                currentRideId = r.id
+                                                isSearching = false
+                                                com.intu.taxi.ui.debug.DebugLog.log("AcceptRide OK id=${r.id}")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                com.intu.taxi.ui.debug.DebugLog.log("AcceptRide error: ${e.message}")
+                                            }
                                     }
                                 )
                                 Spacer(Modifier.height(8.dp))
@@ -392,17 +360,103 @@ fun DriverHomeScreen() {
                         .padding(bottom = 16.dp),
                     contentAlignment = Alignment.BottomCenter
                 ) {
-                    androidx.compose.material3.Button(
-                        onClick = {},
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .height(52.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        androidx.compose.material3.Text(text = "Cancelar viaje", fontWeight = FontWeight.Bold)
+                        if (!isArrived) {
+                            androidx.compose.material3.Button(
+                                onClick = {
+                                    val rid = currentRideId
+                                    if (rid != null) {
+                                        com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                            .getHttpsCallable("driverArrived")
+                                            .call(mapOf("currentRideId" to rid))
+                                            .addOnSuccessListener { isArrived = true; com.intu.taxi.ui.debug.DebugLog.log("DriverArrived OK") }
+                                            .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("DriverArrived error: ${e.message}") }
+                                        showCodeDialog = true
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                            ) {
+                                androidx.compose.material3.Text(text = "Llegué al cliente", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                val rid = currentRideId
+                                if (rid != null) {
+                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                        .getHttpsCallable("cancelRide")
+                                        .call(mapOf("currentRideId" to rid))
+                                        .addOnSuccessListener { com.intu.taxi.ui.debug.DebugLog.log("CancelRide OK") }
+                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CancelRide error: ${e.message}") }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        ) {
+                            androidx.compose.material3.Text(text = "Cancelar viaje", fontWeight = FontWeight.Bold)
+                        }
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                val rid = currentRideId
+                                if (rid != null) {
+                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                        .getHttpsCallable("completeRide")
+                                        .call(mapOf("currentRideId" to rid))
+                                        .addOnSuccessListener { com.intu.taxi.ui.debug.DebugLog.log("CompleteRide OK") }
+                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CompleteRide error: ${e.message}") }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        ) {
+                            androidx.compose.material3.Text(text = "Completar viaje", fontWeight = FontWeight.Bold)
+                        }
                     }
+                }
+                if (showCodeDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showCodeDialog = false },
+                        title = { androidx.compose.material3.Text("Validar código de inicio") },
+                        text = {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = codeInput,
+                                onValueChange = { codeInput = it.filter { ch -> ch.isDigit() }.take(4) },
+                                singleLine = true,
+                                label = { androidx.compose.material3.Text("Código de 4 dígitos") }
+                            )
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.Button(onClick = {
+                                val rid = currentRideId
+                                val codeNum = codeInput.toIntOrNull()
+                                if (rid != null && codeNum != null) {
+                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                        .getHttpsCallable("verifyStartCode")
+                                        .call(mapOf("currentRideId" to rid, "code" to codeNum))
+                                        .addOnSuccessListener { showCodeDialog = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode OK") }
+                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode error: ${e.message}") }
+                                }
+                            }) { androidx.compose.material3.Text("Validar") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.OutlinedButton(onClick = { showCodeDialog = false }) { androidx.compose.material3.Text("Cancelar") }
+                        }
+                    )
                 }
             }
         }
@@ -491,6 +545,8 @@ fun DriverHomeScreen() {
                     val first = snapshot.children.firstOrNull()
                     currentRideId = first?.key
                     isCurrentRide = currentRideId != null
+                    val statusStr = first?.child("status")?.getValue(String::class.java)
+                    isArrived = (statusStr == "arrived")
                     val cLoc = first?.child("clientLocation")
                     val clat = cLoc?.child("lat")?.getValue(Double::class.java)
                     val clon = cLoc?.child("lon")?.getValue(Double::class.java)
@@ -523,6 +579,54 @@ fun DriverHomeScreen() {
                         circleStrokeWidth(2.0)
                     }
                 )
+            }
+        }
+    }
+
+    // Ruta entre conductor y pasajero durante current ride
+    LaunchedEffect(clientLiveLocation, lastDriverLocation, mapboxToken) {
+        val origin = lastDriverLocation
+        val dest = clientLiveLocation
+        if (origin != null && dest != null && mapboxToken.isNotBlank()) {
+            try {
+                val url = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.longitude()},${origin.latitude()};${dest.longitude()},${dest.latitude()}?alternatives=false&geometries=geojson&overview=full&language=es&access_token=${mapboxToken}"
+                val json = withContext(Dispatchers.IO) {
+                    URL(url).openStream().bufferedReader().use { it.readText() }
+                }
+                val obj = JSONObject(json)
+                val routes = obj.optJSONArray("routes") ?: JSONArray()
+                if (routes.length() > 0) {
+                    val route = routes.getJSONObject(0)
+                    val geometry = route.optJSONObject("geometry")
+                    val coords = geometry?.optJSONArray("coordinates")
+                    if (coords != null && coords.length() > 1) {
+                        val pts = mutableListOf<Point>()
+                        for (i in 0 until coords.length()) {
+                            val c = coords.getJSONArray(i)
+                            val lon = c.optDouble(0)
+                            val lat = c.optDouble(1)
+                            pts.add(Point.fromLngLat(lon, lat))
+                        }
+                        val line = LineString.fromLngLats(pts)
+                        val routeSrcId = "driver-route-src"
+                        val routeLayerId = "driver-route-layer"
+                        mapboxMap.getStyle { style ->
+                            try { style.removeStyleLayer(routeLayerId) } catch (_: Exception) {}
+                            try { style.removeStyleSource(routeSrcId) } catch (_: Exception) {}
+                            style.addSource(geoJsonSource(routeSrcId) { feature(Feature.fromGeometry(line)) })
+                            style.addLayer(
+                                com.mapbox.maps.extension.style.layers.generated.lineLayer(routeLayerId, routeSrcId) {
+                                    lineColor("#10B981")
+                                    lineWidth(5.0)
+                                    lineOpacity(0.9)
+                                }
+                            )
+                        }
+                        DebugLog.log("Ruta conductor→pasajero renderizada")
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.log("Error calculando ruta driver→cliente: ${e.message}")
             }
         }
     }
