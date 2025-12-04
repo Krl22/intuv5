@@ -76,6 +76,20 @@ export const acceptRide = onCall(
       (d.vehicleType as string) || (driverObj?.vehicleType as string) || "";
     const vehiclePlate =
       (d.vehiclePlate as string) || (driverObj?.vehiclePlate as string) || "";
+    const vehiclePhoto =
+      (
+        (driverObj?.vehiclePhotoUrl as string) ||
+        (d as any)?.vehiclePhotoUrl ||
+        ""
+      ).trim() || undefined;
+
+    const userDoc = await fs.collection("users").doc(userId).get();
+    const u = userDoc.exists ? userDoc.data() || {} : {};
+    const clientFirst = (u.firstName as string) || "";
+    const clientLast = (u.lastName as string) || "";
+    const clientName =
+      [clientFirst, clientLast].join(" ").trim() || clientFirst || "";
+    const clientPhoto = (u.photoUrl as string) || undefined;
 
     const startCode = Math.floor(1000 + Math.random() * 9000);
     const data: Record<string, any> = {
@@ -96,6 +110,9 @@ export const acceptRide = onCall(
       vehiclePlate,
     };
     if (driverPhoto) data["driverPhoto"] = driverPhoto;
+    if (clientName) data["clientName"] = clientName;
+    if (clientPhoto) data["clientPhoto"] = clientPhoto;
+    if (vehiclePhoto) data["vehiclePhoto"] = vehiclePhoto;
 
     await db.ref(`currentRides/${rideRequestId}`).set(data);
     await db.ref(`rideRequests/${rideRequestId}`).remove();
@@ -149,9 +166,7 @@ export const cancelRide = onCall(
     const userId = cur?.userId as string | undefined;
     if (uid !== driverId && uid !== userId)
       throw new HttpsError("permission-denied", "No autorizado");
-    await db
-      .ref(`currentRides/${currentRideId}`)
-      .update({ status: "cancelled", cancelledAt: { ".sv": "timestamp" } });
+    await db.ref(`currentRides/${currentRideId}`).remove();
     if (driverId) await db.ref(`driverAvailability/${driverId}`).remove();
     return { ok: true };
   }
@@ -198,14 +213,22 @@ export const driverArrived = onCall(
     const uid = request.auth?.uid;
     const { currentRideId } = request.data as { currentRideId?: string };
     if (!uid) throw new HttpsError("unauthenticated", "Auth requerida");
-    if (!currentRideId) throw new HttpsError("invalid-argument", "currentRideId requerido");
+    if (!currentRideId)
+      throw new HttpsError("invalid-argument", "currentRideId requerido");
     const db = getDatabase();
     const snap = await db.ref(`currentRides/${currentRideId}`).get();
-    if (!snap.exists()) throw new HttpsError("not-found", "Current ride no existe");
+    if (!snap.exists())
+      throw new HttpsError("not-found", "Current ride no existe");
     const cur = snap.val() as any;
     const driverId = cur?.driverId as string | undefined;
-    if (!driverId || uid !== driverId) throw new HttpsError("permission-denied", "Solo el conductor puede marcar llegada");
-    await db.ref(`currentRides/${currentRideId}`).update({ status: "arrived", arrivedAt: { ".sv": "timestamp" } });
+    if (!driverId || uid !== driverId)
+      throw new HttpsError(
+        "permission-denied",
+        "Solo el conductor puede marcar llegada"
+      );
+    await db
+      .ref(`currentRides/${currentRideId}`)
+      .update({ status: "arrived", arrivedAt: { ".sv": "timestamp" } });
     return { ok: true };
   }
 );
@@ -214,27 +237,43 @@ export const verifyStartCode = onCall(
   { region: "us-central1" },
   async (request: CallableRequest) => {
     const uid = request.auth?.uid;
-    const { currentRideId, code } = request.data as { currentRideId?: string; code?: number };
+    const { currentRideId, code } = request.data as {
+      currentRideId?: string;
+      code?: number;
+    };
     if (!uid) throw new HttpsError("unauthenticated", "Auth requerida");
-    if (!currentRideId || typeof code !== "number") throw new HttpsError("invalid-argument", "Parámetros inválidos");
+    if (!currentRideId || typeof code !== "number")
+      throw new HttpsError("invalid-argument", "Parámetros inválidos");
     const db = getDatabase();
     const ref = db.ref(`currentRides/${currentRideId}`);
     const snap = await ref.get();
-    if (!snap.exists()) throw new HttpsError("not-found", "Current ride no existe");
+    if (!snap.exists())
+      throw new HttpsError("not-found", "Current ride no existe");
     const cur = snap.val() as any;
     const driverId = cur?.driverId as string | undefined;
     const status = cur?.status as string | undefined;
-    if (!driverId || uid !== driverId) throw new HttpsError("permission-denied", "No autorizado");
-    if (status !== "arrived" && status !== "active") throw new HttpsError("failed-precondition", "Estado inválido para validación");
+    if (!driverId || uid !== driverId)
+      throw new HttpsError("permission-denied", "No autorizado");
+    if (status !== "arrived" && status !== "active")
+      throw new HttpsError(
+        "failed-precondition",
+        "Estado inválido para validación"
+      );
     const startCode = Number(cur?.startCode ?? 0);
-    if (!(startCode >= 1000 && startCode <= 9999)) throw new HttpsError("internal", "Código no disponible");
+    if (!(startCode >= 1000 && startCode <= 9999))
+      throw new HttpsError("internal", "Código no disponible");
     const attempts = Number(cur?.wrongAttempts ?? 0);
-    if (attempts >= 5) throw new HttpsError("resource-exhausted", "Demasiados intentos");
+    if (attempts >= 5)
+      throw new HttpsError("resource-exhausted", "Demasiados intentos");
     if (code !== startCode) {
       await ref.update({ wrongAttempts: attempts + 1 });
       throw new HttpsError("failed-precondition", "Código incorrecto");
     }
-    await ref.update({ status: "in_progress", verifiedAt: { ".sv": "timestamp" }, wrongAttempts: 0 });
+    await ref.update({
+      status: "in_progress",
+      verifiedAt: { ".sv": "timestamp" },
+      wrongAttempts: 0,
+    });
     return { ok: true };
   }
 );
