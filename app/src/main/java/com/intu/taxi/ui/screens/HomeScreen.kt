@@ -276,6 +276,7 @@ fun HomeScreen() {
     var currentRideId by remember { mutableStateOf<String?>(null) }
     var driverLiveLocation by remember { mutableStateOf<Point?>(null) }
     var isCurrentRide by remember { mutableStateOf(false) }
+    var isInProgress by remember { mutableStateOf(false) }
     var currentRideDriverId by remember { mutableStateOf<String?>(null) }
     var currentRideDriverName by remember { mutableStateOf<String?>(null) }
     var currentRidePaymentMethod by remember { mutableStateOf<String?>(null) }
@@ -287,6 +288,7 @@ fun HomeScreen() {
     var currentRideDriverPhoto by remember { mutableStateOf<String?>(null) }
     var currentRideVehiclePhoto by remember { mutableStateOf<String?>(null) }
     var driverEtaMinutes by remember { mutableStateOf<Double?>(null) }
+    var currentRideDestPoint by remember { mutableStateOf<Point?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -946,6 +948,29 @@ fun HomeScreen() {
         }
     }
 
+    LaunchedEffect(isInProgress, currentRideDestPoint) {
+        if (isInProgress) {
+            val point = currentRideDestPoint
+            val srcId = "dest-src"
+            val layerId = "dest-layer"
+            mapboxMap.getStyle { style ->
+                try { style.removeStyleLayer(layerId) } catch (_: Exception) {}
+                try { style.removeStyleSource(srcId) } catch (_: Exception) {}
+                if (point != null) {
+                    style.addSource(geoJsonSource(srcId) { feature(Feature.fromGeometry(point)) })
+                    style.addLayer(
+                        circleLayer(layerId, srcId) {
+                            circleRadius(8.0)
+                            circleColor("#1E88E5")
+                            circleStrokeColor("#FFFFFF")
+                            circleStrokeWidth(2.0)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     // Calculate and render route when both user location and destination are available
     LaunchedEffect(selectedDestination, lastUserLocation, isCurrentRide) {
         val origin = lastUserLocation
@@ -1023,10 +1048,10 @@ fun HomeScreen() {
         }
     }
 
-    LaunchedEffect(driverLiveLocation, lastUserLocation) {
+    LaunchedEffect(driverLiveLocation, lastUserLocation, isInProgress) {
         val origin = lastUserLocation
         val dest = driverLiveLocation
-        if (isCurrentRide && origin != null && dest != null && mapboxPublicToken.isNotBlank()) {
+        if (isCurrentRide && !isInProgress && origin != null && dest != null && mapboxPublicToken.isNotBlank()) {
             try {
                 val url = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.longitude()},${origin.latitude()};${dest.longitude()},${dest.latitude()}?alternatives=false&geometries=geojson&overview=full&language=es&access_token=${mapboxPublicToken}"
                 val json = withContext(Dispatchers.IO) { URL(url).openStream().bufferedReader().use { it.readText() } }
@@ -1072,6 +1097,53 @@ fun HomeScreen() {
         }
     }
 
+    LaunchedEffect(isInProgress, driverLiveLocation, currentRideDestPoint) {
+        val origin = driverLiveLocation
+        val dest = currentRideDestPoint
+        if (isInProgress && origin != null && dest != null && mapboxPublicToken.isNotBlank()) {
+            try {
+                val url = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.longitude()},${origin.latitude()};${dest.longitude()},${dest.latitude()}?alternatives=false&geometries=geojson&overview=full&language=es&access_token=${mapboxPublicToken}"
+                val json = withContext(Dispatchers.IO) { URL(url).openStream().bufferedReader().use { it.readText() } }
+                val obj = JSONObject(json)
+                val routes = obj.optJSONArray("routes") ?: JSONArray()
+                if (routes.length() > 0) {
+                    val route = routes.getJSONObject(0)
+                    val geometry = route.optJSONObject("geometry")
+                    val coords = geometry?.optJSONArray("coordinates")
+                    if (coords != null && coords.length() > 1) {
+                        val pts = mutableListOf<Point>()
+                        for (i in 0 until coords.length()) {
+                            val c = coords.getJSONArray(i)
+                            val lon = c.optDouble(0)
+                            val lat = c.optDouble(1)
+                            pts.add(Point.fromLngLat(lon, lat))
+                        }
+                        val line = LineString.fromLngLats(pts)
+                        val routeSrcId = "driver-to-dest-src"
+                        val routeLayerId = "driver-to-dest-layer"
+                        mapboxMap.getStyle { style ->
+                            try { style.removeStyleLayer("pax-driver-route-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("pax-driver-route-src") } catch (_: Exception) {}
+                            try { style.removeStyleLayer(routeLayerId) } catch (_: Exception) {}
+                            try { style.removeStyleSource(routeSrcId) } catch (_: Exception) {}
+                            style.addSource(geoJsonSource(routeSrcId) { feature(Feature.fromGeometry(line)) })
+                            style.addLayer(
+                                lineLayer(routeLayerId, routeSrcId) {
+                                    lineColor("#1E88E5")
+                                    lineWidth(5.0)
+                                    lineOpacity(0.9)
+                                }
+                            )
+                        }
+                        DebugLog.log("Ruta conductor→destino (pax) renderizada")
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.log("Error calculando ruta driver→destino (pax): ${e.message}")
+            }
+        }
+    }
+
     val onFirstIndicator = remember {
         object : com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener {
             override fun onIndicatorPositionChanged(point: Point) {
@@ -1100,6 +1172,8 @@ fun HomeScreen() {
                     val first = snapshot.children.firstOrNull()
                     currentRideId = first?.key
                     isCurrentRide = currentRideId != null
+                    val statusStr = first?.child("status")?.getValue(String::class.java)
+                    isInProgress = (statusStr == "in_progress")
                     currentRideDriverId = first?.child("driverId")?.getValue(String::class.java)
                     currentRidePaymentMethod = first?.child("paymentMethod")?.getValue(String::class.java)
                     currentRideRideType = first?.child("rideType")?.getValue(String::class.java)
@@ -1114,6 +1188,9 @@ fun HomeScreen() {
                     val dlat = dLoc?.child("lat")?.getValue(Double::class.java)
                     val dlon = dLoc?.child("lon")?.getValue(Double::class.java)
                     if (dlat != null && dlon != null) driverLiveLocation = Point.fromLngLat(dlon, dlat)
+                    val dLatDb = first?.child("destLat")?.getValue(Double::class.java)
+                    val dLonDb = first?.child("destLon")?.getValue(Double::class.java)
+                    currentRideDestPoint = if (dLatDb != null && dLonDb != null) Point.fromLngLat(dLonDb, dLatDb) else null
                     if (currentRideId != null) {
                         val reqId = currentRideRequestId
                         if (reqId != null) {
@@ -1244,10 +1321,11 @@ fun HomeScreen() {
                                 if (rid != null) {
                                     com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
                                     .getHttpsCallable("cancelRide")
-                                    .call(mapOf("currentRideId" to rid))
-                                    .addOnSuccessListener {
-                                        currentRideId = null
-                                        isCurrentRide = false
+                    .call(mapOf("currentRideId" to rid))
+                    .addOnSuccessListener {
+                        currentRideId = null
+                        isCurrentRide = false
+                        isInProgress = false
                                         selectedDestination = null
                                         routeDurationMinutes = null
                                         routeDistanceKm = null
@@ -1255,18 +1333,21 @@ fun HomeScreen() {
                                         isRouteMode = false
                                         showSearchBar = true
                                         headerVisible = true
-                                        mapboxMap.getStyle { style ->
-                                            try { style.removeStyleLayer("route-layer") } catch (_: Exception) {}
-                                            try { style.removeStyleSource("route-src") } catch (_: Exception) {}
-                                            try { style.removeStyleLayer("dest-layer") } catch (_: Exception) {}
-                                            try { style.removeStyleSource("dest-src") } catch (_: Exception) {}
-                                            try { style.removeStyleLayer("pax-driver-route-layer") } catch (_: Exception) {}
-                                            try { style.removeStyleSource("pax-driver-route-src") } catch (_: Exception) {}
-                                            try { style.removeStyleLayer("driver-layer") } catch (_: Exception) {}
-                                            try { style.removeStyleSource("driver-src") } catch (_: Exception) {}
-                                            try { style.removeStyleImage("driver-icon") } catch (_: Exception) {}
-                                        }
-                                    }
+                        mapboxMap.getStyle { style ->
+                            try { style.removeStyleLayer("route-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("route-src") } catch (_: Exception) {}
+                            try { style.removeStyleLayer("dest-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("dest-src") } catch (_: Exception) {}
+                            try { style.removeStyleLayer("pax-driver-route-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("pax-driver-route-src") } catch (_: Exception) {}
+                            try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
+                            try { style.removeStyleLayer("driver-layer") } catch (_: Exception) {}
+                            try { style.removeStyleSource("driver-src") } catch (_: Exception) {}
+                            try { style.removeStyleImage("driver-icon") } catch (_: Exception) {}
+                        }
+                        mapView.location.updateSettings { enabled = true }
+                    }
                                     .addOnFailureListener { e -> DebugLog.log("CancelRide error: ${e.message}") }
                             }
                         },
@@ -1297,10 +1378,25 @@ fun HomeScreen() {
                 try { style.removeStyleSource("dest-src") } catch (_: Exception) {}
                 try { style.removeStyleLayer("pax-driver-route-layer") } catch (_: Exception) {}
                 try { style.removeStyleSource("pax-driver-route-src") } catch (_: Exception) {}
+                try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
+                try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
                 try { style.removeStyleLayer("driver-layer") } catch (_: Exception) {}
                 try { style.removeStyleSource("driver-src") } catch (_: Exception) {}
                 try { style.removeStyleImage("driver-icon") } catch (_: Exception) {}
             }
+            mapView.location.updateSettings { enabled = true }
+        }
+    }
+
+    LaunchedEffect(isInProgress) {
+        if (isInProgress) {
+            mapboxMap.getStyle { style ->
+                try { style.removeStyleLayer("pax-driver-route-layer") } catch (_: Exception) {}
+                try { style.removeStyleSource("pax-driver-route-src") } catch (_: Exception) {}
+            }
+            mapView.location.updateSettings { enabled = false }
+        } else if (isCurrentRide) {
+            mapView.location.updateSettings { enabled = true }
         }
     }
     if (isCurrentRide && showChat) {

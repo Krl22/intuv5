@@ -185,6 +185,8 @@ export const completeRide = onCall(
     if (!currentRideId)
       throw new HttpsError("invalid-argument", "currentRideId requerido");
     const db = getDatabase();
+    const fs = getFirestore();
+    console.log("completeRide:start", { currentRideId, uid });
     const snap = await db.ref(`currentRides/${currentRideId}`).get();
     if (!snap.exists())
       throw new HttpsError("not-found", "Current ride no existe");
@@ -204,8 +206,70 @@ export const completeRide = onCall(
       completedAt: { ".sv": "timestamp" },
       finalPrice: price,
     });
+    console.log("completeRide:statusUpdated", { currentRideId, price });
+    // Persist trip history in Firestore for both user and driver
+    const userId = (cur?.userId as string | undefined) || undefined;
+    const originLat = Number(cur?.originLat ?? 0);
+    const originLon = Number(cur?.originLon ?? 0);
+    const destLat = Number(cur?.destLat ?? 0);
+    const destLon = Number(cur?.destLon ?? 0);
+    const paymentMethod =
+      (cur?.paymentMethod as string | undefined) || "efectivo";
+    const rideType = (cur?.rideType as string | undefined) || "Intu Honda";
+    const driverName = (cur?.driverName as string | undefined) || undefined;
+    const clientName = (cur?.clientName as string | undefined) || undefined;
+    const createdAt = cur?.createdAt ?? undefined;
+    const verifiedAt = cur?.verifiedAt ?? undefined;
+    const arrivedAt = cur?.arrivedAt ?? undefined;
+    const tripData: Record<string, any> = {
+      rideId: currentRideId,
+      status: "completed",
+      paymentMethod,
+      rideType,
+      price,
+      originLat,
+      originLon,
+      destLat,
+      destLon,
+      createdAt: createdAt ?? FieldValue.serverTimestamp(),
+      completedAt: FieldValue.serverTimestamp(),
+    };
+    if (verifiedAt != null) tripData["verifiedAt"] = verifiedAt;
+    if (arrivedAt != null) tripData["arrivedAt"] = arrivedAt;
+    if (driverName) tripData["driverName"] = driverName;
+    if (clientName) tripData["clientName"] = clientName;
+    const writes: Promise<any>[] = [];
+    if (userId) {
+      writes.push(
+        fs.collection("users").doc(userId).collection("trips").add(tripData)
+      );
+    }
+    if (driverId) {
+      writes.push(
+        fs
+          .collection("users")
+          .doc(driverId)
+          .collection("services")
+          .add(tripData)
+      );
+    }
+    const results = await Promise.all(writes);
+    console.log("completeRide:tripsWritten", {
+      currentRideId,
+      userTrip: Boolean(userId),
+      driverTrip: Boolean(driverId),
+      resultsCount: results.length,
+    });
+    // Clean RTDB nodes
     await db.ref(`currentRides/${currentRideId}/chat`).remove();
-    return { ok: true };
+    await db.ref(`currentRides/${currentRideId}`).remove();
+    if (driverId) await db.ref(`driverAvailability/${driverId}`).remove();
+    console.log("completeRide:currentRideDeleted", { currentRideId });
+    return {
+      ok: true,
+      userTrip: Boolean(userId),
+      driverTrip: Boolean(driverId),
+    };
   }
 );
 
