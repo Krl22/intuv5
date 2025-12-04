@@ -62,7 +62,7 @@ android {
         resValue("string", "functions_emulator_port", functionsEmuPort)
         resValue("string", "functions_emulator_enabled", functionsEmuEnabled.toString())
         buildConfigField("boolean", "USE_FUNCTIONS_EMULATOR", functionsEmuEnabled.toString())
-        buildConfigField("String", "APP_VERSION_TAG", "\"1.06\"")
+        buildConfigField("String", "APP_VERSION_TAG", "\"1.07\"")
     }
 }
 

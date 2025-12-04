@@ -637,6 +637,24 @@ private fun ContactCard(
         var emailExpanded by remember { mutableStateOf(false) }
         var emailInput by remember { mutableStateOf(email) }
         Column(Modifier.fillMaxWidth().padding(8.dp)) {
+            val driverAvg = ((profile?.get("driverRating") as? Map<*, *>)?.get("average") as? Number)?.toDouble()
+            val passengerAvg = ((profile?.get("passengerRating") as? Map<*, *>)?.get("average") as? Number)?.toDouble()
+            if (driverAvg != null || passengerAvg != null) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (driverAvg != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC107))
+                            Text(text = String.format("Conductor: %.1f", driverAvg), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (passengerAvg != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC107))
+                            Text(text = String.format("Pasajero: %.1f", passengerAvg), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
             ListItem(
                 modifier = Modifier.let { if (!isGoogleLinked) it.clickable { emailExpanded = true } else it },
                 leadingContent = {

@@ -163,6 +163,9 @@ fun DriverHomeScreen() {
     var currentRideDestPoint by remember { mutableStateOf<Point?>(null) }
     var showChat by remember { mutableStateOf(false) }
     var currentRideUserId by remember { mutableStateOf<String?>(null) }
+    var showRatingDialog by remember { mutableStateOf(false) }
+    var lastCompletedRideId by remember { mutableStateOf<String?>(null) }
+    var lastCompletedTargetUserId by remember { mutableStateOf<String?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
@@ -515,6 +518,7 @@ fun DriverHomeScreen() {
                                         androidx.compose.material3.Button(
                                             onClick = {
                                                 val rid = currentRideId
+                                                val targetUserIdSnapshot = currentRideUserId
                                                 if (rid != null) {
                                                     com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
                                                         .getHttpsCallable("completeRide")
@@ -528,34 +532,35 @@ fun DriverHomeScreen() {
                                                                     .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: driver services encontrados=" + qs.size()) }
                                                                     .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo services driver: ${e.message}") }
                                                             }
-                                                            val uidUser = currentRideUserId
+                                                            val uidUser = targetUserIdSnapshot
                                                             if (!uidUser.isNullOrBlank()) {
                                                                 fs.collection("users").document(uidUser!!).collection("trips").limit(1).get()
                                                                     .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: user trips encontrados=" + qs.size()) }
                                                                     .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo trips user: ${e.message}") }
+                                                                lastCompletedRideId = rid
+                                                                lastCompletedTargetUserId = uidUser
+                                                                com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: abrir dialog rid=${rid} target=${uidUser}")
+                                                                showRatingDialog = true
+                                                            } else {
+                                                                com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: userId vacío, no se puede abrir dialog")
                                                             }
-                                                            com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                                                .getHttpsCallable("cancelRide")
-                                                                .call(mapOf("currentRideId" to rid))
-                                                                .addOnSuccessListener {
-                                                                    isCurrentRide = false
-                                                                    currentRideId = null
-                                                                    isArrived = false
-                                                                    isInProgress = false
-                                                                    clientLiveLocation = null
-                                                                    showCodeDialog = false
-                                                                    mapView.mapboxMap.getStyle { style ->
-                                                                        try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
-                                                                        try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
-                                                                        try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
-                                                                        try { style.removeStyleSource("client-src") } catch (_: Exception) {}
-                                                                        try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
-                                                                        try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
-                                                                        try { style.removeStyleLayer("driver-dest-layer") } catch (_: Exception) {}
-                                                                        try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
-                                                                    }
-                                                                }
-                                                                .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("cancelRide tras completar falló: ${e.message}") }
+                                                            isCurrentRide = false
+                                                            currentRideId = null
+                                                            isArrived = false
+                                                            isInProgress = false
+                                                            clientLiveLocation = null
+                                                            showCodeDialog = false
+                                                            com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: estados reseteados tras complete")
+                                                            mapView.mapboxMap.getStyle { style ->
+                                                                try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
+                                                                try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
+                                                                try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
+                                                                try { style.removeStyleSource("client-src") } catch (_: Exception) {}
+                                                                try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
+                                                                try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
+                                                                try { style.removeStyleLayer("driver-dest-layer") } catch (_: Exception) {}
+                                                                try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
+                                                            }
                                                         }
                                                         .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CompleteRide error: ${e.message}") }
                                                 }
@@ -675,6 +680,40 @@ fun DriverHomeScreen() {
             }
         }
     }
+
+    RatingDialog(
+        title = "Calificar pasajero",
+        show = showRatingDialog,
+        allowComment = false,
+        onDismiss = {
+            com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: dialog dismiss")
+            showRatingDialog = false
+        },
+        onSubmit = { stars, _ ->
+            val rideId = lastCompletedRideId
+            val targetUserId = lastCompletedTargetUserId
+            if (!rideId.isNullOrBlank() && !targetUserId.isNullOrBlank()) {
+                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                    .getHttpsCallable("submitRating")
+                    .call(mapOf(
+                        "rideId" to rideId!!,
+                        "targetUserId" to targetUserId!!,
+                        "role" to "passenger",
+                        "stars" to stars
+                    ))
+                    .addOnSuccessListener {
+                        com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: submit OK rid=${rideId} stars=${stars}")
+                        showRatingDialog = false
+                    }
+                    .addOnFailureListener { e ->
+                        com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: submit error ${e.message}")
+                    }
+            } else {
+                com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: datos inválidos para submit (rideId/target)")
+                showRatingDialog = false
+            }
+        }
+    )
 
     val mapboxMap = mapView.mapboxMap
     LaunchedEffect(mapView) {

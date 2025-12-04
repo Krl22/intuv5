@@ -25,11 +25,16 @@ import com.intu.taxi.BuildConfig
 @Composable
 fun DebugScreen() {
     val ctx = LocalContext.current
+    val filterRatingOnly = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val allMsgs = DebugLog.messages
+    val ratingMsgs = allMsgs.filter { it.contains("rating", ignoreCase = true) || it.contains("RATING-", ignoreCase = true) }
+    val shown = if (filterRatingOnly.value) ratingMsgs else allMsgs
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Mensajes de debug (" + DebugLog.messages.size + ")", style = MaterialTheme.typography.titleMedium)
+                Text("Mensajes de debug (" + shown.size + ")", style = MaterialTheme.typography.titleMedium)
                 Button(onClick = { DebugLog.messages.clear() }) { Text("Limpiar") }
+                Button(onClick = { filterRatingOnly.value = !filterRatingOnly.value }) { Text(if (filterRatingOnly.value) "Mostrar todo" else "Filtrar rating") }
                 Button(onClick = {
                     val host = ctx.getString(R.string.functions_emulator_host)
                     val port = ctx.getString(R.string.functions_emulator_port)
@@ -53,7 +58,7 @@ fun DebugScreen() {
                 }) { Text("Probar Functions") }
             }
         }
-        items(DebugLog.messages) { msg ->
+        items(shown) { msg ->
             Text(text = msg, style = MaterialTheme.typography.bodyLarge)
         }
     }

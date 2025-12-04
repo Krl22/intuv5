@@ -343,3 +343,81 @@ export const verifyStartCode = onCall(
     return { ok: true };
   }
 );
+
+export const submitRating = onCall(
+  { region: "us-central1" },
+  async (request: CallableRequest) => {
+    const raterId = request.auth?.uid;
+    const { rideId, targetUserId, role, stars, comment } = request.data as {
+      rideId?: string;
+      targetUserId?: string;
+      role?: string;
+      stars?: number;
+      comment?: string;
+    };
+    if (!raterId) throw new HttpsError("unauthenticated", "Auth requerida");
+    if (!rideId || !targetUserId)
+      throw new HttpsError("invalid-argument", "Parámetros requeridos");
+    const s = Number(stars);
+    if (!(s >= 1 && s <= 5))
+      throw new HttpsError("invalid-argument", "Stars inválidas");
+    const fs = getFirestore();
+    let valid = false;
+    if (role === "driver") {
+      const qs = await fs
+        .collection("users")
+        .doc(raterId)
+        .collection("trips")
+        .where("rideId", "==", rideId)
+        .limit(1)
+        .get();
+      valid = !qs.empty;
+    } else if (role === "passenger") {
+      const qs = await fs
+        .collection("users")
+        .doc(raterId)
+        .collection("services")
+        .where("rideId", "==", rideId)
+        .limit(1)
+        .get();
+      valid = !qs.empty;
+    } else {
+      throw new HttpsError("invalid-argument", "Role inválido");
+    }
+    if (!valid)
+      throw new HttpsError(
+        "failed-precondition",
+        "Viaje no válido para rating"
+      );
+    const targetRef = fs.collection("users").doc(targetUserId);
+    await fs.runTransaction(async (tx) => {
+      const snap = await tx.get(targetRef);
+      const data = snap.exists ? snap.data() || {} : {};
+      const key = role === "driver" ? "driverRatings" : "passengerRatings";
+      const sumKey = role === "driver" ? "driverRating" : "passengerRating";
+      const existing = ((data[key] as Record<string, any>) || {})[rideId];
+      if (existing) throw new HttpsError("already-exists", "Rating duplicado");
+      const now = FieldValue.serverTimestamp();
+      const entry: any = { rideId, raterId, stars: s, createdAt: now };
+      if (
+        role === "driver" &&
+        typeof comment === "string" &&
+        comment.trim().length > 0
+      ) {
+        entry["comment"] = comment.trim();
+      }
+      const updates: Record<string, any> = {};
+      updates[`${key}.${rideId}`] = entry;
+      const summary = (data[sumKey] as any) || {};
+      const prevCount = Number(summary?.count ?? 0);
+      const prevSum = Number(summary?.sum ?? 0);
+      const newCount = prevCount + 1;
+      const newSum = prevSum + s;
+      const newAvg = newSum / newCount;
+      updates[sumKey] = { count: newCount, sum: newSum, average: newAvg };
+      tx.set(targetRef, updates, { merge: true });
+      return null;
+    });
+    return { ok: true };
+  }
+);

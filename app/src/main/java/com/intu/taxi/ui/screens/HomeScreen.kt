@@ -289,6 +289,9 @@ fun HomeScreen() {
     var currentRideVehiclePhoto by remember { mutableStateOf<String?>(null) }
     var driverEtaMinutes by remember { mutableStateOf<Double?>(null) }
     var currentRideDestPoint by remember { mutableStateOf<Point?>(null) }
+    var showRatingDialog by remember { mutableStateOf(false) }
+    var lastCompletedRideId by remember { mutableStateOf<String?>(null) }
+    var lastCompletedTargetUserId by remember { mutableStateOf<String?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
@@ -1191,6 +1194,15 @@ fun HomeScreen() {
                     val dLatDb = first?.child("destLat")?.getValue(Double::class.java)
                     val dLonDb = first?.child("destLon")?.getValue(Double::class.java)
                     currentRideDestPoint = if (dLatDb != null && dLonDb != null) Point.fromLngLat(dLonDb, dLatDb) else null
+                    if (statusStr == "completed") {
+                        val ridNow = currentRideId
+                        val driverIdNow = currentRideDriverId
+                        if (!ridNow.isNullOrBlank() && !driverIdNow.isNullOrBlank()) {
+                            lastCompletedRideId = ridNow
+                            lastCompletedTargetUserId = driverIdNow
+                            showRatingDialog = true
+                        }
+                    }
                     if (currentRideId != null) {
                         val reqId = currentRideRequestId
                         if (reqId != null) {
@@ -1361,6 +1373,31 @@ fun HomeScreen() {
             }
         }
     }
+    RatingDialog(
+        title = "Calificar conductor",
+        show = showRatingDialog,
+        allowComment = true,
+        onDismiss = { showRatingDialog = false },
+        onSubmit = { stars, comment ->
+            val rideId = lastCompletedRideId
+            val targetUserId = lastCompletedTargetUserId
+            if (!rideId.isNullOrBlank() && !targetUserId.isNullOrBlank()) {
+                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                    .getHttpsCallable("submitRating")
+                    .call(mapOf(
+                        "rideId" to rideId!!,
+                        "targetUserId" to targetUserId!!,
+                        "role" to "driver",
+                        "stars" to stars,
+                        "comment" to (comment ?: "")
+                    ))
+                    .addOnSuccessListener { showRatingDialog = false }
+                    .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("submitRating error: ${e.message}") }
+            } else {
+                showRatingDialog = false
+            }
+        }
+    )
 
     LaunchedEffect(isCurrentRide) {
         if (!isCurrentRide) {
