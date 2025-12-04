@@ -166,6 +166,7 @@ export const cancelRide = onCall(
     const userId = cur?.userId as string | undefined;
     if (uid !== driverId && uid !== userId)
       throw new HttpsError("permission-denied", "No autorizado");
+    await db.ref(`currentRides/${currentRideId}/chat`).remove();
     await db.ref(`currentRides/${currentRideId}`).remove();
     if (driverId) await db.ref(`driverAvailability/${driverId}`).remove();
     return { ok: true };
@@ -203,6 +204,7 @@ export const completeRide = onCall(
       completedAt: { ".sv": "timestamp" },
       finalPrice: price,
     });
+    await db.ref(`currentRides/${currentRideId}/chat`).remove();
     return { ok: true };
   }
 );
