@@ -234,6 +234,8 @@ export const completeRide = onCall(
       createdAt: createdAt ?? FieldValue.serverTimestamp(),
       completedAt: FieldValue.serverTimestamp(),
     };
+    if (userId) tripData["userId"] = userId;
+    if (driverId) tripData["driverId"] = driverId;
     if (verifiedAt != null) tripData["verifiedAt"] = verifiedAt;
     if (arrivedAt != null) tripData["arrivedAt"] = arrivedAt;
     if (driverName) tripData["driverName"] = driverName;
@@ -269,6 +271,8 @@ export const completeRide = onCall(
       ok: true,
       userTrip: Boolean(userId),
       driverTrip: Boolean(driverId),
+      userId: userId ?? null,
+      driverId: driverId ?? null,
     };
   }
 );

@@ -523,7 +523,7 @@ fun DriverHomeScreen() {
                                                     com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
                                                         .getHttpsCallable("completeRide")
                                                         .call(mapOf("currentRideId" to rid, "finalPrice" to (currentRidePrice ?: 0.0)))
-                                                        .addOnSuccessListener {
+                                                        .addOnSuccessListener { res ->
                                                             com.intu.taxi.ui.debug.DebugLog.log("CompleteRide OK")
                                                             val fs = FirebaseFirestore.getInstance()
                                                             val driverUidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
@@ -532,7 +532,9 @@ fun DriverHomeScreen() {
                                                                     .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: driver services encontrados=" + qs.size()) }
                                                                     .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo services driver: ${e.message}") }
                                                             }
-                                                            val uidUser = targetUserIdSnapshot
+                                                            val dataMap = (res.data as? Map<*, *>)
+                                                            val userIdFromResult = (dataMap?.get("userId") as? String)
+                                                            val uidUser = userIdFromResult ?: targetUserIdSnapshot
                                                             if (!uidUser.isNullOrBlank()) {
                                                                 fs.collection("users").document(uidUser!!).collection("trips").limit(1).get()
                                                                     .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: user trips encontrados=" + qs.size()) }

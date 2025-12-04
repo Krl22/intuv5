@@ -455,7 +455,7 @@ private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> U
         Box(modifier = Modifier.fillMaxWidth().background(gradient)) {
             if (showDriverToggle) {
                 Row(modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp)) {
-                    RolePill(text = if (driverMode) "Conductor" else "Pasajero", onClick = { onToggleDriver(!driverMode) })
+                    ModeToggle(checked = driverMode, onToggle = { onToggleDriver(it) })
                 }
             }
             Column(
@@ -526,7 +526,7 @@ private fun ModeToggle(checked: Boolean, onToggle: (Boolean) -> Unit) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = if (driverSelected) Color(0xFF10B981) else Color.White)
-                Text(text = "Conductor", color = if (driverSelected) Color.White else Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                // Text(text = "Conductor", color = if (driverSelected) Color.White else Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
             }
         }
         Box(
@@ -539,7 +539,7 @@ private fun ModeToggle(checked: Boolean, onToggle: (Boolean) -> Unit) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Filled.Person, contentDescription = null, tint = if (passengerSelected) Color(0xFF3B82F6) else Color.White)
-                Text(text = "Pasajero", color = if (passengerSelected) Color.White else Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                // Text(text = "Pasajero", color = if (passengerSelected) Color.White else Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
             }
         }
     }

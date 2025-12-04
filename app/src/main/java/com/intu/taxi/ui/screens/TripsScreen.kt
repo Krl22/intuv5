@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +83,15 @@ data class DriverTrip(
     val dropoff: String,
     val fare: String,
     val status: String
+)
+
+data class DriverStats(
+    val todayEarnings: Double,
+    val todayTrips: Int,
+    val weeklyEarnings: List<Float>,
+    val acceptanceRate: Float,
+    val completionRate: Float,
+    val demandMatrix: List<List<Float>>
 )
 
 private fun formatDate(ts: Timestamp?): String {
@@ -132,6 +142,24 @@ private fun formatPriceSoles(p: Double?): String {
     return "S/ " + String.format(Locale.getDefault(), "%.2f", v)
 }
 
+private fun anyToDate(any: Any?): java.util.Date? {
+    return when (any) {
+        is com.google.firebase.Timestamp -> any.toDate()
+        is java.util.Date -> any
+        is Number -> {
+            val ms = any.toLong()
+            val millis = if (ms < 1_000_000_000_000L) ms * 1000L else ms
+            java.util.Date(millis)
+        }
+        else -> null
+    }
+}
+
+private fun formatDateAny(any: Any?): String {
+    val d = anyToDate(any) ?: java.util.Date()
+    return SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(d)
+}
+
 @Composable
 fun TripsScreen() {
     val uid = FirebaseAuth.getInstance().currentUser?.uid
@@ -142,13 +170,20 @@ fun TripsScreen() {
     val contentVisible = remember { mutableStateOf(false) }
     val clientTripsState = remember { mutableStateOf<List<ClientTrip>>(emptyList()) }
     val driverTripsState = remember { mutableStateOf<List<DriverTrip>>(emptyList()) }
-    LaunchedEffect(uid) {
+    var driverStats by remember { mutableStateOf<DriverStats?>(null) }
+    DisposableEffect(uid) {
+        val db = FirebaseFirestore.getInstance()
+        var reg: com.google.firebase.firestore.ListenerRegistration? = null
         if (uid != null) {
-            FirebaseFirestore.getInstance().collection("users").document(uid).get().addOnSuccessListener { doc ->
-                driverApproved.value = doc.getBoolean("driverApproved") == true
-                driverMode.value = doc.getBoolean("driverMode") == true
+            reg = db.collection("users").document(uid).addSnapshotListener { doc, _ ->
+                driverApproved.value = doc?.getBoolean("driverApproved") == true
+                driverMode.value = doc?.getBoolean("driverMode") == true
+                com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: snapshot driverApproved=" + driverApproved.value + ", driverMode=" + driverMode.value)
             }
         }
+        onDispose { reg?.remove() }
+    }
+    LaunchedEffect(Unit) {
         headerVisible.value = true
         delay(200)
         contentVisible.value = true
@@ -157,51 +192,88 @@ fun TripsScreen() {
         val me = uid
         if (me != null) {
             val fs = FirebaseFirestore.getInstance()
-            val isDriver = driverApproved.value
+            val isDriver = driverApproved.value && driverMode.value
+            com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: uid=" + me + ", isDriver=" + isDriver)
+            if (mapboxToken.isBlank()) com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: mapbox token vacío, usando coordenadas")
             if (isDriver) {
+                com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: consultando services para uid=" + me)
                 fs.collection("users").document(me).collection("services").orderBy("completedAt", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(50).get()
                     .addOnSuccessListener { qs ->
                         Thread {
-                            val items = qs.documents.map { d ->
-                                val id = d.id
-                                val passenger = d.getString("clientName") ?: "—"
-                                val oLat = d.getDouble("originLat")
-                                val oLon = d.getDouble("originLon")
-                                val dLat = d.getDouble("destLat")
-                                val dLon = d.getDouble("destLon")
-                                val pickupLabel = reverseGeocodeStreetCity(mapboxToken, oLon, oLat) ?: formatCoord(oLat, oLon)
-                                val dropoffLabel = reverseGeocodeStreetCity(mapboxToken, dLon, dLat) ?: formatCoord(dLat, dLon)
-                                val fare = formatPriceSoles(d.getDouble("price"))
-                                val status = d.getString("status") ?: "—"
-                                DriverTrip(id, passenger, pickupLabel, dropoffLabel, fare, status)
+                            val items = qs.documents.mapNotNull { d ->
+                                runCatching {
+                                    val id = d.id
+                                    val passenger = d.getString("clientName") ?: "—"
+                                    val oLat = d.getDouble("originLat")
+                                    val oLon = d.getDouble("originLon")
+                                    val dLat = d.getDouble("destLat")
+                                    val dLon = d.getDouble("destLon")
+                                    val pickupLabel = reverseGeocodeStreetCity(mapboxToken, oLon, oLat) ?: formatCoord(oLat, oLon)
+                                    val dropoffLabel = reverseGeocodeStreetCity(mapboxToken, dLon, dLat) ?: formatCoord(dLat, dLon)
+                                    val fare = formatPriceSoles(d.getDouble("price"))
+                                    val status = d.getString("status") ?: "—"
+                                    DriverTrip(id, passenger, pickupLabel, dropoffLabel, fare, status)
+                                }.getOrNull()
                             }
-                            Handler(Looper.getMainLooper()).post { driverTripsState.value = items }
+                            com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: services documentos=" + qs.documents.size)
+                            val stats = runCatching { computeDriverStats(qs.documents) }.getOrNull()
+                            Handler(Looper.getMainLooper()).post {
+                                driverTripsState.value = items
+                                driverStats = stats
+                                if (stats == null) {
+                                    com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: computeDriverStats retornó null")
+                                } else {
+                                    com.intu.taxi.ui.debug.DebugLog.log(
+                                        "TripsScreen: stats todayEarnings=" + String.format(Locale.getDefault(), "%.2f", stats.todayEarnings) +
+                                                ", todayTrips=" + stats.todayTrips +
+                                                ", acceptanceRate=" + String.format(Locale.getDefault(), "%.2f", stats.acceptanceRate) +
+                                                ", completionRate=" + String.format(Locale.getDefault(), "%.2f", stats.completionRate)
+                                    )
+                                }
+                            }
                         }.start()
                     }
+                    .addOnFailureListener { e ->
+                        Handler(Looper.getMainLooper()).post {
+                            driverTripsState.value = emptyList()
+                            driverStats = null
+                        }
+                        com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: error leyendo services ${e.message}")
+                    }
             } else {
+                com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: consultando trips para uid=" + me)
                 fs.collection("users").document(me).collection("trips").orderBy("completedAt", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(50).get()
                     .addOnSuccessListener { qs ->
                         Thread {
-                            val items = qs.documents.map { d ->
-                                val id = d.id
-                                val date = formatDate(d.getTimestamp("completedAt") ?: d.getTimestamp("createdAt"))
-                                val oLat = d.getDouble("originLat")
-                                val oLon = d.getDouble("originLon")
-                                val dLat = d.getDouble("destLat")
-                                val dLon = d.getDouble("destLon")
-                                val fromLabel = reverseGeocodeStreetCity(mapboxToken, oLon, oLat) ?: formatCoord(oLat, oLon)
-                                val toLabel = reverseGeocodeStreetCity(mapboxToken, dLon, dLat) ?: formatCoord(dLat, dLon)
-                                val price = formatPriceSoles(d.getDouble("price"))
-                                val status = d.getString("status") ?: "—"
-                                ClientTrip(id, date, fromLabel, toLabel, price, status)
+                            val items = qs.documents.mapNotNull { d ->
+                                runCatching {
+                                    val id = d.id
+                                    val date = formatDateAny(d.get("completedAt") ?: d.get("createdAt"))
+                                    val oLat = d.getDouble("originLat")
+                                    val oLon = d.getDouble("originLon")
+                                    val dLat = d.getDouble("destLat")
+                                    val dLon = d.getDouble("destLon")
+                                    val fromLabel = reverseGeocodeStreetCity(mapboxToken, oLon, oLat) ?: formatCoord(oLat, oLon)
+                                    val toLabel = reverseGeocodeStreetCity(mapboxToken, dLon, dLat) ?: formatCoord(dLat, dLon)
+                                    val price = formatPriceSoles(d.getDouble("price"))
+                                    val status = d.getString("status") ?: "—"
+                                    ClientTrip(id, date, fromLabel, toLabel, price, status)
+                                }.getOrNull()
                             }
+                            com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: trips documentos=" + qs.documents.size)
                             Handler(Looper.getMainLooper()).post { clientTripsState.value = items }
                         }.start()
                     }
+                    .addOnFailureListener { e ->
+                        Handler(Looper.getMainLooper()).post { clientTripsState.value = emptyList() }
+                        com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: error leyendo trips ${e.message}")
+                    }
             }
+        } else {
+            com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: uid es null, no se consulta Firestore")
         }
     }
-    val isDriver = driverApproved.value
+    val isDriver = driverApproved.value && driverMode.value
     val bg = Brush.verticalGradient(listOf(Color(0xFF08817E).copy(alpha = 0.1f), Color(0xFF1E1F47).copy(alpha = 0.05f), MaterialTheme.colorScheme.surface))
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(Modifier.fillMaxSize()) {
@@ -209,7 +281,7 @@ fun TripsScreen() {
                 EnhancedHeader(isDriver)
             }
             AnimatedVisibility(visible = contentVisible.value, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) {
-                if (isDriver) DriverContent(driverTripsState.value) else ClientContent(clientTripsState.value)
+                if (isDriver) DriverContent(driverTripsState.value, driverStats) else ClientContent(clientTripsState.value)
             }
         }
     }
@@ -238,7 +310,7 @@ private fun ClientContent(trips: List<ClientTrip>) {
 }
 
 @Composable
-private fun DriverContent(trips: List<DriverTrip>) {
+private fun DriverContent(trips: List<DriverTrip>, stats: DriverStats?) {
     var selectedTab = remember { mutableStateOf(0) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -253,7 +325,7 @@ private fun DriverContent(trips: List<DriverTrip>) {
         if (selectedTab.value == 0) {
             items(trips) { trip -> DriverTripCard(trip) }
         } else {
-            item { DriverDashboard() }
+            item { DriverDashboard(stats) }
         }
     }
 }
@@ -358,22 +430,25 @@ private fun DriverTripCard(trip: DriverTrip) {
 }
 
 @Composable
-private fun DriverDashboard() {
+private fun DriverDashboard(stats: DriverStats?) {
+    val s = stats
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MetricTile(modifier = Modifier.weight(1f), title = "Ingresos hoy", value = "S/ 156.80", accent = Color(0xFF10B981))
-            MetricTile(modifier = Modifier.weight(1f), title = "Viajes", value = "12", accent = Color(0xFF1E88E5))
+            val todayValue = if (s != null) "S/ ${String.format("%.2f", s.todayEarnings)}" else "S/ —"
+            val tripsValue = if (s != null) s.todayTrips.toString() else "—"
+            MetricTile(modifier = Modifier.weight(1f), title = "Ingresos hoy", value = todayValue, accent = Color(0xFF10B981))
+            MetricTile(modifier = Modifier.weight(1f), title = "Viajes", value = tripsValue, accent = Color(0xFF1E88E5))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            GlowRing(modifier = Modifier.weight(1f), title = "Aceptación", progress = 0.86f, color = Color(0xFF7C4DFF))
-            GlowRing(modifier = Modifier.weight(1f), title = "Finalización", progress = 0.92f, color = Color(0xFFFF6D00))
+            GlowRing(modifier = Modifier.weight(1f), title = "Aceptación", progress = (s?.acceptanceRate ?: 0f), color = Color(0xFF7C4DFF))
+            GlowRing(modifier = Modifier.weight(1f), title = "Finalización", progress = (s?.completionRate ?: 0f), color = Color(0xFFFF6D00))
         }
         Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.95f)), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("Ingresos semanales", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
                 Spacer(Modifier.height(8.dp))
-                val week = listOf(85f, 120f, 96f, 140f, 180f, 160f, 200f)
-                var selected by remember { mutableStateOf(4f) }
+                val week = s?.weeklyEarnings ?: listOf(0f,0f,0f,0f,0f,0f,0f)
+                var selected by remember { mutableStateOf(6f) }
                 AreaChart(values = week, accent = Brush.horizontalGradient(listOf(Color(0xFF00E5C3), Color(0xFF7C4DFF))))
                 Spacer(Modifier.height(8.dp))
                 Slider(value = selected, onValueChange = { selected = it }, valueRange = 0f..6f, steps = 5, colors = SliderDefaults.colors(thumbColor = Color(0xFF00E5C3), activeTrackColor = Color(0xFF7C4DFF)))
@@ -388,16 +463,71 @@ private fun DriverDashboard() {
             Column(Modifier.padding(16.dp)) {
                 Text("Demanda por hora", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
                 Spacer(Modifier.height(12.dp))
-                DemandHeatmap(matrix = listOf(
-                    listOf(0.2f,0.3f,0.1f,0.4f,0.6f,0.8f),
-                    listOf(0.3f,0.2f,0.4f,0.5f,0.7f,0.9f),
-                    listOf(0.1f,0.2f,0.3f,0.6f,0.8f,1.0f),
-                    listOf(0.2f,0.4f,0.5f,0.7f,0.9f,0.6f),
-                    listOf(0.3f,0.5f,0.6f,0.8f,0.7f,0.5f)
+                DemandHeatmap(matrix = s?.demandMatrix ?: listOf(
+                    listOf(0f,0f,0f,0f,0f,0f),
+                    listOf(0f,0f,0f,0f,0f,0f),
+                    listOf(0f,0f,0f,0f,0f,0f),
+                    listOf(0f,0f,0f,0f,0f,0f),
+                    listOf(0f,0f,0f,0f,0f,0f)
                 ))
             }
         }
     }
+}
+
+private fun computeDriverStats(docs: List<com.google.firebase.firestore.DocumentSnapshot>): DriverStats {
+    val now = java.util.Calendar.getInstance()
+    fun sameDay(a: java.util.Date, b: java.util.Date): Boolean {
+        val ca = java.util.Calendar.getInstance().apply { time = a }
+        val cb = java.util.Calendar.getInstance().apply { time = b }
+        return ca.get(java.util.Calendar.YEAR) == cb.get(java.util.Calendar.YEAR) && ca.get(java.util.Calendar.DAY_OF_YEAR) == cb.get(java.util.Calendar.DAY_OF_YEAR)
+    }
+    val today = now.time
+    var todayEarnings = 0.0
+    var todayTrips = 0
+    val last7Days = (0..6).map { d ->
+        java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -d) }.time
+    }.reversed()
+    val dailySums = MutableList(last7Days.size) { 0.0 }
+    var acceptedCount = 0
+    var arrivedCount = 0
+    var consideredCount = 0
+    val bucketHours = listOf(0..3, 4..7, 8..11, 12..15, 16..19, 20..23)
+    val heatDays = (0..4).map { d -> java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -d) }.time }.reversed()
+    val heatCounts = Array(heatDays.size) { IntArray(bucketHours.size) { 0 } }
+    docs.forEach { d ->
+        val completed = anyToDate(d.get("completedAt")) ?: anyToDate(d.get("createdAt"))
+        val price = ((d.get("price") as? Number)?.toDouble()) ?: (d.getDouble("price") ?: 0.0)
+        if (completed != null) {
+            if (sameDay(completed, today)) {
+                todayEarnings += price
+                todayTrips += 1
+            }
+            last7Days.forEachIndexed { idx, date ->
+                if (sameDay(completed, date)) dailySums[idx] += price
+            }
+            val vid = anyToDate(d.get("verifiedAt"))
+            val arr = anyToDate(d.get("arrivedAt"))
+            acceptedCount += if (vid != null) 1 else 0
+            arrivedCount += if (arr != null) 1 else 0
+            consideredCount += 1
+            heatDays.forEachIndexed { r, day ->
+                if (sameDay(completed, day)) {
+                    val cal = java.util.Calendar.getInstance().apply { time = completed }
+                    val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+                    val cIdx = bucketHours.indexOfFirst { hour in it }
+                    if (cIdx >= 0) heatCounts[r][cIdx]++
+                }
+            }
+        }
+    }
+    val weekly = dailySums.map { it.toFloat() }
+    val accRate = if (consideredCount > 0) acceptedCount.toFloat() / consideredCount else 0f
+    val compRate = if (consideredCount > 0) arrivedCount.toFloat() / consideredCount else 0f
+    var maxHeat = 1
+    heatCounts.forEach { row -> row.forEach { v -> if (v > maxHeat) maxHeat = v } }
+    val matrix = heatCounts.map { row -> row.map { v -> v.toFloat() / maxHeat } }
+    return DriverStats(todayEarnings = todayEarnings, todayTrips = todayTrips, weeklyEarnings = weekly, acceptanceRate = accRate, completionRate = compRate, demandMatrix = matrix)
 }
 
 @Composable
