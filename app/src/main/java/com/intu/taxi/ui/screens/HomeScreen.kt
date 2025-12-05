@@ -288,6 +288,7 @@ fun HomeScreen() {
     var currentRideDriverPhoto by remember { mutableStateOf<String?>(null) }
     var currentRideVehiclePhoto by remember { mutableStateOf<String?>(null) }
     var driverEtaMinutes by remember { mutableStateOf<Double?>(null) }
+    var driverToDestEtaMinutes by remember { mutableStateOf<Double?>(null) }
     var currentRideDestPoint by remember { mutableStateOf<Point?>(null) }
     var showRatingDialog by remember { mutableStateOf(false) }
     var lastCompletedRideId by remember { mutableStateOf<String?>(null) }
@@ -1112,6 +1113,8 @@ fun HomeScreen() {
                 if (routes.length() > 0) {
                     val route = routes.getJSONObject(0)
                     val geometry = route.optJSONObject("geometry")
+                    val durationSec = route.optDouble("duration", Double.NaN)
+                    if (!durationSec.isNaN()) driverToDestEtaMinutes = kotlin.math.max(1.0, durationSec / 60.0)
                     val coords = geometry?.optJSONArray("coordinates")
                     if (coords != null && coords.length() > 1) {
                         val pts = mutableListOf<Point>()
@@ -1294,8 +1297,8 @@ fun HomeScreen() {
             ) {
                     Column(Modifier.padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "Espera al conductor", style = MaterialTheme.typography.titleMedium, color = Color(0xFF111827))
-                            val eta = driverEtaMinutes?.let { "${it.toInt()}" } ?: "--"
+                            Text(text = if (isInProgress) "Viaje en curso" else "Espera al conductor", style = MaterialTheme.typography.titleMedium, color = Color(0xFF111827))
+                            val eta = if (isInProgress) driverToDestEtaMinutes?.let { "${it.toInt()}" } ?: "--" else driverEtaMinutes?.let { "${it.toInt()}" } ?: "--"
                             EtaBadge(mins = eta)
                         }
                         Spacer(Modifier.height(10.dp))
@@ -1314,6 +1317,19 @@ fun HomeScreen() {
                                 val type = currentRideVehicleType ?: "—"
                                 Text(text = type, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
                             }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                val dPhoto = currentRideDriverPhoto
+                                val dName = currentRideDriverName ?: "—"
+                                Box(modifier = Modifier.size(64.dp).clip(CircleShape).background(Color(0xFFF3F4F6)), contentAlignment = Alignment.Center) {
+                                    if (!dPhoto.isNullOrBlank()) {
+                                        AsyncImage(model = dPhoto, contentDescription = null, modifier = Modifier.size(64.dp).clip(CircleShape))
+                                    } else {
+                                        Icon(Icons.Filled.Person, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(28.dp))
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(text = dName, style = MaterialTheme.typography.bodySmall, color = Color(0xFF111827))
+                            }
                         }
                         Spacer(Modifier.height(10.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
@@ -1323,7 +1339,7 @@ fun HomeScreen() {
                         }
                         Spacer(Modifier.height(10.dp))
                         val sc = currentRideStartCode
-                        if (sc != null) {
+                        if (sc != null && !isInProgress) {
                             CodeDigits(code = sc)
                             Spacer(Modifier.height(12.dp))
                         }
@@ -1345,7 +1361,8 @@ fun HomeScreen() {
                                         isRouteMode = false
                                         showSearchBar = true
                                         headerVisible = true
-                        mapboxMap.getStyle { style ->
+                                        driverToDestEtaMinutes = null
+                                        mapboxMap.getStyle { style ->
                             try { style.removeStyleLayer("route-layer") } catch (_: Exception) {}
                             try { style.removeStyleSource("route-src") } catch (_: Exception) {}
                             try { style.removeStyleLayer("dest-layer") } catch (_: Exception) {}

@@ -111,8 +111,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import com.intu.taxi.ui.debug.DebugLog
 import com.intu.taxi.BuildConfig
+import java.net.URL
+import org.json.JSONObject
+import android.os.Handler
+import android.os.Looper
 
 data class SavedPlace(val type: String, val name: String, val lat: Double, val lon: Double, val label: String? = null, val icon: String? = null)
+data class RecentService(val date: String, val time: String, val to: String, val price: String)
 
 @Composable
 fun AccountScreen(
@@ -423,8 +428,8 @@ fun AccountScreen(
                 val vehiclePlate = (driverData["vehiclePlate"] as? String) ?: ""
                 item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverBalanceCardLive(uid = uid, onRecharge = onStartTopUp) } }
                 item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { VehicleCard(photoUrl = vehiclePhoto, type = vehicleType, brand = vehicleBrand, model = vehicleModel, year = vehicleYear, plate = vehiclePlate) } }
-                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverStatsCard() } }
-                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverRecentTripsCard() } }
+                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverStatsCardLive(uid = uid) } }
+                item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { DriverRecentServicesCardLive(uid = uid) } }
             }
             
             
@@ -441,6 +446,57 @@ fun AccountScreen(
         }
     }
     // Topups: ahora se procesan en el server via Cloud Functions (processTopup)
+}
+
+private fun anyToDate(any: Any?): java.util.Date? {
+    return when (any) {
+        is com.google.firebase.Timestamp -> any.toDate()
+        is java.util.Date -> any
+        is Number -> {
+            val ms = any.toLong()
+            val millis = if (ms < 1_000_000_000_000L) ms * 1000L else ms
+            java.util.Date(millis)
+        }
+        else -> null
+    }
+}
+
+private fun formatCoord(lat: Double?, lon: Double?): String {
+    val la = lat ?: 0.0
+    val lo = lon ?: 0.0
+    return String.format(java.util.Locale.getDefault(), "%.5f, %.5f", la, lo)
+}
+
+private fun reverseGeocodeStreetCity(mapboxToken: String, lon: Double?, lat: Double?): String? {
+    val lo = lon ?: return null
+    val la = lat ?: return null
+    if (mapboxToken.isBlank()) return null
+    return try {
+        val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${lo},${la}.json?language=es&limit=1&access_token=${mapboxToken}"
+        val json = URL(url).openStream().bufferedReader().use { it.readText() }
+        val obj = JSONObject(json)
+        val features = obj.optJSONArray("features")
+        if (features != null && features.length() > 0) {
+            val f = features.getJSONObject(0)
+            val street = f.optString("text").trim()
+            val number = f.optString("address").trim()
+            var city: String? = null
+            val ctx = f.optJSONArray("context")
+            if (ctx != null) {
+                for (i in 0 until ctx.length()) {
+                    val c = ctx.getJSONObject(i)
+                    val id = c.optString("id")
+                    if (id.startsWith("place") || id.startsWith("locality")) {
+                        city = c.optString("text").trim()
+                        break
+                    }
+                }
+            }
+            val firstPart = if (number.isNotBlank() && street.isNotBlank()) "$number $street" else if (street.isNotBlank()) street else null
+            val parts = listOfNotNull(firstPart, city)
+            if (parts.isNotEmpty()) parts.joinToString(", ") else null
+        } else null
+    } catch (_: Exception) { null }
 }
 
 @Composable
@@ -967,10 +1023,14 @@ private fun ContactCard(
                 }
             )
             if (helpPrivacyExpanded) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = { }) { Text(stringResource(R.string.help_center)) }
-                    OutlinedButton(onClick = { }) { Text(stringResource(R.string.privacy)) }
-                    OutlinedButton(onClick = onOpenDebug) { Text(stringResource(R.string.debug)) }
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = { }) { Text(stringResource(R.string.help_center)) }
+                        OutlinedButton(onClick = { }) { Text(stringResource(R.string.privacy)) }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                        OutlinedButton(onClick = onOpenDebug) { Text(stringResource(R.string.debug)) }
+                    }
                 }
             }
             if (showProfilePhotoDialog) {
@@ -1158,23 +1218,85 @@ private fun VehicleCard(photoUrl: String, type: String, brand: String, model: St
 }
 
 @Composable
-private fun DriverStatsCard() {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
+private fun DriverStatsCardLive(uid: String?) {
+    var todayEarnings by remember { mutableStateOf(0.0) }
+    var todayTrips by remember { mutableStateOf(0) }
+    var weekEarnings by remember { mutableStateOf(0.0) }
+    var weekTrips by remember { mutableStateOf(0) }
+    DisposableEffect(uid) {
+        val fs = FirebaseFirestore.getInstance()
+        val reg = if (uid != null) fs.collection("users").document(uid).collection("services")
+            .orderBy("completedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(200)
+            .addSnapshotListener { qs, _ ->
+                val docs = qs?.documents ?: emptyList()
+                val today = java.util.Calendar.getInstance().time
+                fun sameDay(a: java.util.Date, b: java.util.Date): Boolean {
+                    val ca = java.util.Calendar.getInstance().apply { time = a }
+                    val cb = java.util.Calendar.getInstance().apply { time = b }
+                    return ca.get(java.util.Calendar.YEAR) == cb.get(java.util.Calendar.YEAR) && ca.get(java.util.Calendar.DAY_OF_YEAR) == cb.get(java.util.Calendar.DAY_OF_YEAR)
+                }
+                val last7Days = (0..6).map { d ->
+                    java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -d) }.time
+                }
+                var tEarn = 0.0
+                var tTrips = 0
+                var wEarn = 0.0
+                var wTrips = 0
+                docs.forEach { d ->
+                    val completedAny = d.get("completedAt") ?: d.get("createdAt")
+                    val date = when (completedAny) {
+                        is com.google.firebase.Timestamp -> completedAny.toDate()
+                        is java.util.Date -> completedAny
+                        is Number -> {
+                            val ms = completedAny.toLong()
+                            val millis = if (ms < 1_000_000_000_000L) ms * 1000L else ms
+                            java.util.Date(millis)
+                        }
+                        else -> null
+                    }
+                    val price = ((d.get("price") as? Number)?.toDouble()) ?: (d.getDouble("price") ?: 0.0)
+                    if (date != null) {
+                        if (sameDay(date, today)) {
+                            tEarn += price
+                            tTrips += 1
+                        }
+                        last7Days.forEach { day ->
+                            if (sameDay(date, day)) {
+                                wEarn += price
+                                wTrips += 1
+                            }
+                        }
+                    }
+                }
+                todayEarnings = tEarn
+                todayTrips = tTrips
+                weekEarnings = wEarn
+                weekTrips = wTrips
+            } else null
+        onDispose { reg?.remove() }
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.95f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.earnings_trips_label), style = MaterialTheme.typography.titleMedium)
-            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(Brush.radialGradient(listOf(Color(0xFF08817E), Color(0xFF1E1F47)))), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.TrendingUp, contentDescription = null, tint = Color.White)
+                }
+                Spacer(Modifier.size(12.dp))
+                Text(stringResource(R.string.earnings_trips_label), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.TrendingUp, contentDescription = null, tint = Color(0xFF0F172A))
                 Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.today_summary), style = MaterialTheme.typography.bodyMedium)
+                Text("Hoy: S/ " + String.format(java.util.Locale.getDefault(), "%.2f", todayEarnings) + " · " + todayTrips + " servicios", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
             }
-            LinearProgressIndicator(progress = 0.6f, color = Color(0xFF0D9488))
+            LinearProgressIndicator(progress = (todayTrips.coerceAtLeast(1) / 10f).coerceIn(0f, 1f), color = Color(0xFF0D9488))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.PriceChange, contentDescription = null, tint = Color(0xFF0D9488))
                 Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.week_summary), style = MaterialTheme.typography.bodyMedium)
+                Text("Semana: S/ " + String.format(java.util.Locale.getDefault(), "%.2f", weekEarnings) + " · " + weekTrips + " servicios", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
             }
-            LinearProgressIndicator(progress = 0.42f, color = Color(0xFF0F172A))
+            LinearProgressIndicator(progress = (weekTrips.coerceAtLeast(1) / 50f).coerceIn(0f, 1f), color = Color(0xFF0F172A))
         }
     }
 }
@@ -1207,14 +1329,88 @@ private fun DriverBalanceCardLive(uid: String?, onRecharge: () -> Unit) {
 }
 
 @Composable
-private fun DriverRecentTripsCard() {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.recent_trips_label), style = MaterialTheme.typography.titleMedium)
+private fun DriverRecentServicesCardLive(uid: String?) {
+    var items by remember { mutableStateOf<List<RecentService>>(emptyList()) }
+    val token = stringResource(R.string.mapbox_access_token)
+    DisposableEffect(uid) {
+        val fs = FirebaseFirestore.getInstance()
+        val reg = if (uid != null) fs.collection("users").document(uid).collection("services")
+            .orderBy("completedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(10)
+            .addSnapshotListener { qs, _ ->
+                val docs = qs?.documents ?: emptyList()
+                Thread {
+                    val mapped = docs.take(5).map { d ->
+                        val date = anyToDate(d.get("completedAt") ?: d.get("createdAt")) ?: java.util.Date()
+                        val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(date)
+                        val dateStr = java.text.SimpleDateFormat("dd/MM", java.util.Locale.getDefault()).format(date)
+                        val oLat = d.getDouble("originLat")
+                        val oLon = d.getDouble("originLon")
+                        val dLat = d.getDouble("destLat")
+                        val dLon = d.getDouble("destLon")
+                        val toLabel = reverseGeocodeStreetCity(token, dLon, dLat) ?: formatCoord(dLat, dLon)
+                        val price = ((d.get("price") as? Number)?.toDouble()) ?: (d.getDouble("price") ?: 0.0)
+                        val priceStr = "S/ " + String.format(java.util.Locale.getDefault(), "%.2f", price)
+                        RecentService(date = dateStr, time = timeStr, to = toLabel, price = priceStr)
+                    }
+                    Handler(Looper.getMainLooper()).post { items = mapped }
+                }.start()
+            } else null
+        onDispose { reg?.remove() }
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.95f)), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(Brush.radialGradient(listOf(Color(0xFF08817E), Color(0xFF1E1F47)))), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color.White)
+                }
+                Spacer(Modifier.size(12.dp))
+                Text("Servicios recientes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+            }
             HorizontalDivider()
-            ListItem(headlineContent = { Text("12:10 · Centro → Aeropuerto · S/ 45.00") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488)) })
-            ListItem(headlineContent = { Text("10:35 · Universidad → Mall · S/ 23.50") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488)) })
-            ListItem(headlineContent = { Text("09:05 · Casa → Oficina · S/ 18.00") }, leadingContent = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF0D9488)) })
+            items.forEachIndexed { idx, svc ->
+                RecentServiceRow(svc)
+                if (idx < items.size - 1) HorizontalDivider()
+            }
+            if (items.isEmpty()) {
+                ListItem(headlineContent = { Text("Sin servicios completados") })
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentServiceRow(svc: RecentService) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(svc.to, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = Color(0xFF111827), modifier = Modifier.weight(1f))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFF10B981))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(svc.price, style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.size(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFE5E7EB))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(svc.date, style = MaterialTheme.typography.labelSmall, color = Color(0xFF374151))
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFE5E7EB))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(svc.time, style = MaterialTheme.typography.labelSmall, color = Color(0xFF374151))
+            }
         }
     }
 }
