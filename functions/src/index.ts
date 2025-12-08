@@ -166,6 +166,7 @@ export const cancelRide = onCall(
     const userId = cur?.userId as string | undefined;
     if (uid !== driverId && uid !== userId)
       throw new HttpsError("permission-denied", "No autorizado");
+    await db.ref(`currentRides/${currentRideId}/chat`).remove();
     await db.ref(`currentRides/${currentRideId}`).remove();
     if (driverId) await db.ref(`driverAvailability/${driverId}`).remove();
     return { ok: true };
@@ -184,6 +185,8 @@ export const completeRide = onCall(
     if (!currentRideId)
       throw new HttpsError("invalid-argument", "currentRideId requerido");
     const db = getDatabase();
+    const fs = getFirestore();
+    console.log("completeRide:start", { currentRideId, uid });
     const snap = await db.ref(`currentRides/${currentRideId}`).get();
     if (!snap.exists())
       throw new HttpsError("not-found", "Current ride no existe");
@@ -203,7 +206,74 @@ export const completeRide = onCall(
       completedAt: { ".sv": "timestamp" },
       finalPrice: price,
     });
-    return { ok: true };
+    console.log("completeRide:statusUpdated", { currentRideId, price });
+    // Persist trip history in Firestore for both user and driver
+    const userId = (cur?.userId as string | undefined) || undefined;
+    const originLat = Number(cur?.originLat ?? 0);
+    const originLon = Number(cur?.originLon ?? 0);
+    const destLat = Number(cur?.destLat ?? 0);
+    const destLon = Number(cur?.destLon ?? 0);
+    const paymentMethod =
+      (cur?.paymentMethod as string | undefined) || "efectivo";
+    const rideType = (cur?.rideType as string | undefined) || "Intu Honda";
+    const driverName = (cur?.driverName as string | undefined) || undefined;
+    const clientName = (cur?.clientName as string | undefined) || undefined;
+    const createdAt = cur?.createdAt ?? undefined;
+    const verifiedAt = cur?.verifiedAt ?? undefined;
+    const arrivedAt = cur?.arrivedAt ?? undefined;
+    const tripData: Record<string, any> = {
+      rideId: currentRideId,
+      status: "completed",
+      paymentMethod,
+      rideType,
+      price,
+      originLat,
+      originLon,
+      destLat,
+      destLon,
+      createdAt: createdAt ?? FieldValue.serverTimestamp(),
+      completedAt: FieldValue.serverTimestamp(),
+    };
+    if (userId) tripData["userId"] = userId;
+    if (driverId) tripData["driverId"] = driverId;
+    if (verifiedAt != null) tripData["verifiedAt"] = verifiedAt;
+    if (arrivedAt != null) tripData["arrivedAt"] = arrivedAt;
+    if (driverName) tripData["driverName"] = driverName;
+    if (clientName) tripData["clientName"] = clientName;
+    const writes: Promise<any>[] = [];
+    if (userId) {
+      writes.push(
+        fs.collection("users").doc(userId).collection("trips").add(tripData)
+      );
+    }
+    if (driverId) {
+      writes.push(
+        fs
+          .collection("users")
+          .doc(driverId)
+          .collection("services")
+          .add(tripData)
+      );
+    }
+    const results = await Promise.all(writes);
+    console.log("completeRide:tripsWritten", {
+      currentRideId,
+      userTrip: Boolean(userId),
+      driverTrip: Boolean(driverId),
+      resultsCount: results.length,
+    });
+    // Clean RTDB nodes
+    await db.ref(`currentRides/${currentRideId}/chat`).remove();
+    await db.ref(`currentRides/${currentRideId}`).remove();
+    if (driverId) await db.ref(`driverAvailability/${driverId}`).remove();
+    console.log("completeRide:currentRideDeleted", { currentRideId });
+    return {
+      ok: true,
+      userTrip: Boolean(userId),
+      driverTrip: Boolean(driverId),
+      userId: userId ?? null,
+      driverId: driverId ?? null,
+    };
   }
 );
 
@@ -273,6 +343,84 @@ export const verifyStartCode = onCall(
       status: "in_progress",
       verifiedAt: { ".sv": "timestamp" },
       wrongAttempts: 0,
+    });
+    return { ok: true };
+  }
+);
+
+export const submitRating = onCall(
+  { region: "us-central1" },
+  async (request: CallableRequest) => {
+    const raterId = request.auth?.uid;
+    const { rideId, targetUserId, role, stars, comment } = request.data as {
+      rideId?: string;
+      targetUserId?: string;
+      role?: string;
+      stars?: number;
+      comment?: string;
+    };
+    if (!raterId) throw new HttpsError("unauthenticated", "Auth requerida");
+    if (!rideId || !targetUserId)
+      throw new HttpsError("invalid-argument", "Parámetros requeridos");
+    const s = Number(stars);
+    if (!(s >= 1 && s <= 5))
+      throw new HttpsError("invalid-argument", "Stars inválidas");
+    const fs = getFirestore();
+    let valid = false;
+    if (role === "driver") {
+      const qs = await fs
+        .collection("users")
+        .doc(raterId)
+        .collection("trips")
+        .where("rideId", "==", rideId)
+        .limit(1)
+        .get();
+      valid = !qs.empty;
+    } else if (role === "passenger") {
+      const qs = await fs
+        .collection("users")
+        .doc(raterId)
+        .collection("services")
+        .where("rideId", "==", rideId)
+        .limit(1)
+        .get();
+      valid = !qs.empty;
+    } else {
+      throw new HttpsError("invalid-argument", "Role inválido");
+    }
+    if (!valid)
+      throw new HttpsError(
+        "failed-precondition",
+        "Viaje no válido para rating"
+      );
+    const targetRef = fs.collection("users").doc(targetUserId);
+    await fs.runTransaction(async (tx) => {
+      const snap = await tx.get(targetRef);
+      const data = snap.exists ? snap.data() || {} : {};
+      const key = role === "driver" ? "driverRatings" : "passengerRatings";
+      const sumKey = role === "driver" ? "driverRating" : "passengerRating";
+      const existing = ((data[key] as Record<string, any>) || {})[rideId];
+      if (existing) throw new HttpsError("already-exists", "Rating duplicado");
+      const now = FieldValue.serverTimestamp();
+      const entry: any = { rideId, raterId, stars: s, createdAt: now };
+      if (
+        role === "driver" &&
+        typeof comment === "string" &&
+        comment.trim().length > 0
+      ) {
+        entry["comment"] = comment.trim();
+      }
+      const updates: Record<string, any> = {};
+      updates[`${key}.${rideId}`] = entry;
+      const summary = (data[sumKey] as any) || {};
+      const prevCount = Number(summary?.count ?? 0);
+      const prevSum = Number(summary?.sum ?? 0);
+      const newCount = prevCount + 1;
+      const newSum = prevSum + s;
+      const newAvg = newSum / newCount;
+      updates[sumKey] = { count: newCount, sum: newSum, average: newAvg };
+      tx.set(targetRef, updates, { merge: true });
+      return null;
     });
     return { ok: true };
   }

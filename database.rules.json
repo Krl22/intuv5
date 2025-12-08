@@ -19,7 +19,14 @@
         ".read": "auth != null && (data.child('userId').val() === auth.uid || data.child('driverId').val() === auth.uid)",
         ".write": false,
         "driverLocation": { ".write": "auth != null && data.parent().child('driverId').val() === auth.uid" },
-        "clientLocation": { ".write": "auth != null && data.parent().child('userId').val() === auth.uid" }
+        "clientLocation": { ".write": "auth != null && data.parent().child('userId').val() === auth.uid" },
+        "chat": {
+          "messages": {
+            ".read": "auth != null && (data.parent().parent().child('userId').val() === auth.uid || data.parent().parent().child('driverId').val() === auth.uid) && data.parent().parent().child('status').val() != 'completed'",
+            ".write": "auth != null && (data.parent().parent().child('userId').val() === auth.uid || data.parent().parent().child('driverId').val() === auth.uid) && data.parent().parent().child('status').val() != 'completed'",
+            ".indexOn": ["timestamp"]
+          }
+        }
       }
     }
   }
