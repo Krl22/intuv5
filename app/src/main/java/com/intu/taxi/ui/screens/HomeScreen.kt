@@ -147,6 +147,7 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 import java.net.URLEncoder
 import java.net.HttpURLConnection
+import java.io.IOException
 import java.util.Locale
 import org.json.JSONObject
 import org.json.JSONArray
@@ -271,6 +272,7 @@ fun HomeScreen() {
     var routeDistanceKm by remember { mutableStateOf<Double?>(null) }
     var selectedRide by remember { mutableStateOf<String?>(null) }
     var paymentMethod by remember { mutableStateOf("efectivo") }
+    var userCountryCode by remember { mutableStateOf("") }
     var isSearchingDriver by remember { mutableStateOf(false) }
     var currentRideRequestId by remember { mutableStateOf<String?>(null) }
     var currentRideId by remember { mutableStateOf<String?>(null) }
@@ -338,6 +340,13 @@ fun HomeScreen() {
                     if (parsed != savedPlaces) savedPlaces = parsed
                     val pm = doc?.getString("paymentMethod")
                     if (!pm.isNullOrBlank() && pm != paymentMethod) paymentMethod = pm
+                    val countryStr = doc?.getString("country")?.lowercase()
+                    val code = when (countryStr) {
+                        "peru" -> "PE"
+                        "usa" -> "US"
+                        else -> ""
+                    }
+                    if (code != userCountryCode) userCountryCode = code
                 }
             }
             onDispose { reg?.remove() }
@@ -346,7 +355,7 @@ fun HomeScreen() {
         LaunchedEffect(imeVisible) {
             if (showSearchBar && !isRouteMode) {
                 isSearchFocused = imeVisible
-                if (!imeVisible) suggestions = emptyList()
+                if (!imeVisible && searchQuery.isBlank()) suggestions = emptyList()
             }
         }
         LaunchedEffect(savedPlaceQueued) {
@@ -385,10 +394,21 @@ fun HomeScreen() {
                     val maxLon = lon + lonDelta
                     val maxLat = lat + latDelta
                     val bbox = "$minLon,$minLat,$maxLon,$maxLat"
-                    val result = withContext(Dispatchers.IO) {
-                        geocodeSuggestions(mapboxPublicToken, q, centerPoint, bbox)
+                    val bboxToUse = if (userCountryCode.isNotBlank()) "" else bbox
+                    val resultPrimary = withContext(Dispatchers.IO) {
+                        geocodeSuggestions(mapboxPublicToken, q, centerPoint, bboxToUse, userCountryCode)
+                    }
+                    var result = resultPrimary
+                    val raw = searchQuery.trim().lowercase()
+                    val wantsSupermarket = listOf("plaza vea", "super", "supermarket", "mercado", "wong", "tienda", "shopping").any { raw.contains(it) }
+                    if (result.isEmpty() && wantsSupermarket) {
+                        result = withContext(Dispatchers.IO) {
+                            geocodePoiByCategories(mapboxPublicToken, raw, centerPoint, userCountryCode)
+                        }
                     }
                     suggestions = result
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    DebugLog.log("Geocoding cancelado")
                 } catch (e: Exception) {
                     DebugLog.log("Error geocoding: ${e.message}")
                     suggestions = emptyList()
@@ -892,7 +912,7 @@ fun HomeScreen() {
             if (isPinMode && p != null && mapboxPublicToken.isNotBlank()) {
                 try {
                     delay(250)
-                    val name = withContext(Dispatchers.IO) { reverseGeocode(mapboxPublicToken, p) }
+                    val name = withContext(Dispatchers.IO) { reverseGeocode(mapboxPublicToken, p, userCountryCode) }
                     if (!name.isNullOrBlank()) searchQuery = name
                 } catch (e: Exception) {
                     DebugLog.log("Error reverse geocoding pin: ${e.message}")
@@ -1789,10 +1809,10 @@ private fun SearchingDriverCard() {
 }
 
 private const val SEARCH_RADIUS_MILES = 20.0
-private const val SEARCH_SUGGESTIONS_LIMIT = 6
+private const val SEARCH_SUGGESTIONS_LIMIT = 10
 private const val HTTP_TIMEOUT_MS = 6000
 
-private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
+private fun parseAddressFeature(f: JSONObject, country: String): Pair<String, Point>? {
     val addressNum = f.optString("address", "")
     val streetName = f.optString("text", "")
     var city = ""
@@ -1807,7 +1827,11 @@ private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
             }
         }
     }
-    val name = listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
+    val name = if (country == "PE") {
+        listOf(streetName, addressNum, city).filter { it.isNotBlank() }.joinToString(", ")
+    } else {
+        listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
+    }
     val center = f.optJSONArray("center")
     return if (name.isNotBlank() && center != null && center.length() >= 2) {
         val lon = center.optDouble(0)
@@ -1823,33 +1847,62 @@ private suspend fun httpGet(url: String): String {
     conn.requestMethod = "GET"
     conn.doInput = true
     return try {
-        conn.inputStream.bufferedReader().use { it.readText() }
+        val code = conn.responseCode
+        val body = if (code in 200..299) {
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } else {
+            val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+            throw IOException("HTTP ${code}: ${err}")
+        }
+        body
     } finally {
         conn.disconnect()
     }
 }
 
-private suspend fun geocodeSuggestions(token: String, q: String, center: Point, bbox: String): List<Pair<String, Point>> {
-    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?types=address&autocomplete=true&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}&bbox=${bbox}&access_token=${token}"
+private suspend fun geocodeSuggestions(token: String, q: String, center: Point, bbox: String, country: String): List<Pair<String, Point>> {
+    val bboxParam = if (bbox.isNotBlank()) "&bbox=${bbox}" else ""
+    val countryParam = if (country.isNotBlank()) "&country=${country}" else ""
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?types=address,poi&autocomplete=true&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}${bboxParam}${countryParam}&access_token=${token}"
     val json = httpGet(url)
     val obj = JSONObject(json)
     val feats = obj.optJSONArray("features") ?: JSONArray()
     val out = mutableListOf<Pair<String, Point>>()
     for (i in 0 until feats.length()) {
         val f = feats.getJSONObject(i)
-        val parsed = parseAddressFeature(f)
+        val parsed = parseAddressFeature(f, country)
         if (parsed != null) out.add(parsed)
     }
+    DebugLog.log("Home: sugerencias ${out.size} para '${q}'")
     return out
 }
 
-private suspend fun reverseGeocode(token: String, p: Point): String? {
+private suspend fun geocodePoiByCategories(token: String, qRaw: String, center: Point, country: String): List<Pair<String, Point>> {
+    val enc = URLEncoder.encode(qRaw, "UTF-8")
+    val countryParam = if (country.isNotBlank()) "&country=${country}" else ""
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${enc}.json?types=poi&autocomplete=true&fuzzyMatch=true&categories=supermarket,grocery,shopping&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}${countryParam}&access_token=${token}"
+    val json = httpGet(url)
+    val obj = JSONObject(json)
+    val feats = obj.optJSONArray("features") ?: JSONArray()
+    val out = mutableListOf<Pair<String, Point>>()
+    for (i in 0 until feats.length()) {
+        val f = feats.getJSONObject(i)
+        val parsed = parseAddressFeature(f, country)
+        if (parsed != null) out.add(parsed)
+    }
+    DebugLog.log("Home: fallback categorías ${out.size} para '${qRaw}'")
+    return out
+}
+
+// removed visiblePoiSuggestions fallback based on rendered features
+
+private suspend fun reverseGeocode(token: String, p: Point, country: String): String? {
     val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${p.longitude()},${p.latitude()}.json?types=address&language=es&limit=1&access_token=${token}"
     val json = httpGet(url)
     val obj = JSONObject(json)
     val feats = obj.optJSONArray("features") ?: JSONArray()
     if (feats.length() == 0) return null
-    val parsed = parseAddressFeature(feats.getJSONObject(0))
+    val parsed = parseAddressFeature(feats.getJSONObject(0), country)
     return parsed?.first
 }
 

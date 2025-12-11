@@ -66,6 +66,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import com.intu.taxi.ui.debug.DebugLog
+import java.io.IOException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -115,6 +118,25 @@ fun AddPlaceScreen(
     var isSearchFocused by remember { mutableStateOf(false) }
     var isPinMode by remember { mutableStateOf(false) }
     var pinCenter by remember { mutableStateOf<Point?>(null) }
+    var userCountryCode by remember { mutableStateOf("") }
+
+    DisposableEffect(Unit) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+        var reg: com.google.firebase.firestore.ListenerRegistration? = null
+        if (uid != null) {
+            val docRef = FirebaseFirestore.getInstance().collection("users").document(uid)
+            reg = docRef.addSnapshotListener { doc, _ ->
+                val countryStr = doc?.getString("country")?.lowercase()
+                val code = when (countryStr) {
+                    "peru" -> "PE"
+                    "usa" -> "US"
+                    else -> ""
+                }
+                if (code != userCountryCode) userCountryCode = code
+            }
+        }
+        onDispose { reg?.remove() }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(modifier = Modifier.fillMaxSize(), factory = { mapView })
@@ -285,18 +307,40 @@ fun AddPlaceScreen(
                 delay(250)
                 val enc = URLEncoder.encode(q, "UTF-8")
                 val center = mapView.mapboxMap.cameraState.center
-                val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${enc}.json?types=address&autocomplete=true&limit=6&language=es&proximity=${center.longitude()},${center.latitude()}&access_token=${mapboxToken}"
+                val countryParam = if (userCountryCode.isNotBlank()) "&country=${userCountryCode}" else ""
+                val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${enc}.json?types=address,poi&autocomplete=true&limit=6&language=es&proximity=${center.longitude()},${center.latitude()}${countryParam}&access_token=${mapboxToken}"
                 val json = httpGet(url)
                 val obj = JSONObject(json)
                 val feats = obj.optJSONArray("features") ?: JSONArray()
-                val result = mutableListOf<Pair<String, Point>>()
+                var result = mutableListOf<Pair<String, Point>>()
                 for (i in 0 until feats.length()) {
                     val f = feats.getJSONObject(i)
-                    val parsed = parseAddressFeature(f)
+                    val parsed = parseAddressFeature(f, userCountryCode)
                     if (parsed != null) result.add(parsed)
+                }
+                if (result.isEmpty()) {
+                    val raw = q.lowercase()
+                    val wantsSupermarket = listOf("plaza vea", "super", "supermarket", "mercado", "wong", "tienda", "shopping").any { raw.contains(it) }
+                    if (wantsSupermarket) {
+                        val url2 = "https://api.mapbox.com/geocoding/v5/mapbox.places/${enc}.json?types=poi&autocomplete=true&fuzzyMatch=true&categories=supermarket,grocery,shopping&limit=6&language=es&proximity=${center.longitude()},${center.latitude()}${countryParam}&access_token=${mapboxToken}"
+                        val json2 = httpGet(url2)
+                        val obj2 = JSONObject(json2)
+                        val feats2 = obj2.optJSONArray("features") ?: JSONArray()
+                        val result2 = mutableListOf<Pair<String, Point>>()
+                        for (i in 0 until feats2.length()) {
+                            val f = feats2.getJSONObject(i)
+                            val parsed = parseAddressFeature(f, userCountryCode)
+                            if (parsed != null) result2.add(parsed)
+                        }
+                        result = result2
+                        DebugLog.log("AddPlace: fallback categorías ${result.size} para '${q}'")
+                    }
+                    // visible features fallback removed
                 }
                 suggestions = result
                 DebugLog.log("AddPlace: sugerencias ${result.size} para '${q}'")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                DebugLog.log("AddPlace: geocoding cancelado para '${q}'")
             } catch (_: Exception) {
                 DebugLog.log("AddPlace: error geocoding para '${q}'")
                 suggestions = emptyList()
@@ -325,7 +369,7 @@ fun AddPlaceScreen(
                 val obj = JSONObject(json)
                 val feats = obj.optJSONArray("features") ?: JSONArray()
                 if (feats.length() > 0) {
-                    val parsed = parseAddressFeature(feats.getJSONObject(0))
+                    val parsed = parseAddressFeature(feats.getJSONObject(0), userCountryCode)
                     val name = parsed?.first
                     if (!name.isNullOrBlank()) {
                         searchQuery = name
@@ -371,7 +415,7 @@ private fun IconPickerGrid(selected: String, onSelect: (String) -> Unit) {
     }
 }
 
-private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
+private fun parseAddressFeature(f: JSONObject, country: String): Pair<String, Point>? {
     val addressNum = f.optString("address", "")
     val streetName = f.optString("text", "")
     var city = ""
@@ -386,7 +430,11 @@ private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
             }
         }
     }
-    val name = listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
+    val name = if (country == "PE") {
+        listOf(streetName, addressNum, city).filter { it.isNotBlank() }.joinToString(", ")
+    } else {
+        listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
+    }
     val center = f.optJSONArray("center")
     return if (name.isNotBlank() && center != null && center.length() >= 2) {
         val lon = center.optDouble(0)
@@ -402,6 +450,14 @@ private suspend fun httpGet(url: String): String = withContext(Dispatchers.IO) {
     conn.requestMethod = "GET"
     conn.doInput = true
     try {
-        conn.inputStream.bufferedReader().use { it.readText() }
+        val code = conn.responseCode
+        if (code in 200..299) {
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } else {
+            val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+            throw IOException("HTTP ${code}: ${err}")
+        }
     } finally { conn.disconnect() }
 }
+
+// removed visiblePoiSuggestions helper based on rendered features
