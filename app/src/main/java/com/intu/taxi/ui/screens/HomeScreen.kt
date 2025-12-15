@@ -147,6 +147,7 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 import java.net.URLEncoder
 import java.net.HttpURLConnection
+import java.io.IOException
 import java.util.Locale
 import org.json.JSONObject
 import org.json.JSONArray
@@ -261,6 +262,7 @@ fun HomeScreen() {
     var isSearchFocused by remember { mutableStateOf(false) }
     var firstName by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<Pair<String, Point>>>(emptyList()) }
+    var isSuggestionsLoading by remember { mutableStateOf(false) }
     var showSearchBar by remember { mutableStateOf(true) }
     var selectedDestination by remember { mutableStateOf<Point?>(null) }
     var isRouteMode by remember { mutableStateOf(false) }
@@ -271,6 +273,7 @@ fun HomeScreen() {
     var routeDistanceKm by remember { mutableStateOf<Double?>(null) }
     var selectedRide by remember { mutableStateOf<String?>(null) }
     var paymentMethod by remember { mutableStateOf("efectivo") }
+    var userCountryCode by remember { mutableStateOf("") }
     var isSearchingDriver by remember { mutableStateOf(false) }
     var currentRideRequestId by remember { mutableStateOf<String?>(null) }
     var currentRideId by remember { mutableStateOf<String?>(null) }
@@ -294,6 +297,8 @@ fun HomeScreen() {
     var lastCompletedRideId by remember { mutableStateOf<String?>(null) }
     var lastCompletedTargetUserId by remember { mutableStateOf<String?>(null) }
     val mapboxPublicToken = stringResource(id = com.intu.taxi.R.string.mapbox_access_token)
+    val googlePlacesApiKey = stringResource(id = com.intu.taxi.R.string.google_places_api_key)
+    val appContext = LocalContext.current
     val rootView = LocalView.current
     val focusManager = LocalFocusManager.current
     var imeVisible by remember { mutableStateOf(false) }
@@ -338,6 +343,13 @@ fun HomeScreen() {
                     if (parsed != savedPlaces) savedPlaces = parsed
                     val pm = doc?.getString("paymentMethod")
                     if (!pm.isNullOrBlank() && pm != paymentMethod) paymentMethod = pm
+                    val countryStr = doc?.getString("country")?.lowercase()
+                    val code = when (countryStr) {
+                        "peru" -> "PE"
+                        "usa" -> "US"
+                        else -> ""
+                    }
+                    if (code != userCountryCode) userCountryCode = code
                 }
             }
             onDispose { reg?.remove() }
@@ -346,7 +358,7 @@ fun HomeScreen() {
         LaunchedEffect(imeVisible) {
             if (showSearchBar && !isRouteMode) {
                 isSearchFocused = imeVisible
-                if (!imeVisible) suggestions = emptyList()
+                if (!imeVisible && searchQuery.isBlank()) suggestions = emptyList()
             }
         }
         LaunchedEffect(savedPlaceQueued) {
@@ -366,11 +378,14 @@ fun HomeScreen() {
                 savedPlaceQueued = null
             }
         }
+        var googleBadge by remember { mutableStateOf(false) }
         LaunchedEffect(searchQuery) {
             if (mapboxPublicToken.isBlank()) {
                 suggestions = emptyList()
+                isSuggestionsLoading = false
             } else if (!isPinMode && searchQuery.trim().length >= 2) {
                 try {
+                    isSuggestionsLoading = true
                     delay(250)
                     val q = URLEncoder.encode(searchQuery.trim(), "UTF-8")
                     val centerPoint = mapView.mapboxMap.cameraState.center
@@ -385,16 +400,38 @@ fun HomeScreen() {
                     val maxLon = lon + lonDelta
                     val maxLat = lat + latDelta
                     val bbox = "$minLon,$minLat,$maxLon,$maxLat"
-                    val result = withContext(Dispatchers.IO) {
-                        geocodeSuggestions(mapboxPublicToken, q, centerPoint, bbox)
+                    val bboxToUse = if (userCountryCode.isNotBlank()) "" else bbox
+                    val resultPrimary = withContext(Dispatchers.IO) {
+                        geocodeSuggestions(mapboxPublicToken, q, centerPoint, bboxToUse, userCountryCode)
                     }
-                    suggestions = result
+                    var result = resultPrimary
+                    val raw = searchQuery.trim().lowercase()
+                    val wantsSupermarket = listOf("plaza vea", "super", "supermarket", "mercado", "wong", "tienda", "shopping").any { raw.contains(it) }
+                    if (result.isEmpty() && wantsSupermarket) {
+                        result = withContext(Dispatchers.IO) {
+                            geocodePoiByCategories(mapboxPublicToken, raw, centerPoint, userCountryCode)
+                        }
+                    }
+                    val googleRes = withContext(Dispatchers.IO) {
+                        googlePlacesAddressSuggestions(appContext, googlePlacesApiKey, searchQuery.trim(), centerPoint, userCountryCode)
+                    }
+                    val googlePoiRes = withContext(Dispatchers.IO) {
+                        googlePlacesPoiSuggestions(appContext, googlePlacesApiKey, searchQuery.trim(), centerPoint, userCountryCode)
+                    }
+                    googleBadge = (googleRes.isNotEmpty() || googlePoiRes.isNotEmpty())
+                    suggestions = mergeSuggestions(mergeSuggestions(result, googleRes), googlePoiRes)
+                    isSuggestionsLoading = false
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    DebugLog.log("Geocoding cancelado")
+                    isSuggestionsLoading = false
                 } catch (e: Exception) {
                     DebugLog.log("Error geocoding: ${e.message}")
                     suggestions = emptyList()
+                    isSuggestionsLoading = false
                 }
             } else {
                 suggestions = emptyList()
+                isSuggestionsLoading = false
             }
         }
 
@@ -498,7 +535,7 @@ fun HomeScreen() {
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
                     }
-                    if (showSearchBar && !isCurrentRide && !isPinMode && suggestions.isNotEmpty()) {
+                    if (showSearchBar && !isCurrentRide && !isPinMode && (suggestions.isNotEmpty() || isSuggestionsLoading)) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -509,28 +546,51 @@ fun HomeScreen() {
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                                suggestions.take(6).forEach { s ->
+                                if (isSuggestionsLoading && suggestions.isEmpty()) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                                            .clickable {
-                                                mapView.mapboxMap.setCamera(
-                                                    CameraOptions.Builder()
-                                                        .center(s.second)
-                                                        .zoom(14.0)
-                                                        .build()
-                                                )
-                                                selectedDestination = s.second
-                                                showSearchBar = false
-                                                isSearchFocused = false
-                                                searchQuery = ""
-                                                suggestions = emptyList()
-                                                isRouteMode = true
-                                            },
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(text = s.first, color = Color(0xFF111827))
+                                        CircularProgressIndicator(color = Color(0xFF0D9488))
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(text = "Buscando...", color = Color(0xFF111827))
+                                    }
+                                } else {
+                                    suggestions.take(6).forEach { s ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                                .clickable {
+                                                    mapView.mapboxMap.setCamera(
+                                                        CameraOptions.Builder()
+                                                            .center(s.second)
+                                                            .zoom(14.0)
+                                                            .build()
+                                                    )
+                                                    selectedDestination = s.second
+                                                    showSearchBar = false
+                                                    isSearchFocused = false
+                                                    searchQuery = ""
+                                                    suggestions = emptyList()
+                                                    isRouteMode = true
+                                                },
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = s.first, color = Color(0xFF111827))
+                                        }
+                                    }
+                                    if (googleBadge) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = "Powered by Google", color = Color(0xFF6E6E73), style = MaterialTheme.typography.labelSmall)
+                                        }
                                     }
                                 }
                             }
@@ -892,7 +952,7 @@ fun HomeScreen() {
             if (isPinMode && p != null && mapboxPublicToken.isNotBlank()) {
                 try {
                     delay(250)
-                    val name = withContext(Dispatchers.IO) { reverseGeocode(mapboxPublicToken, p) }
+                    val name = withContext(Dispatchers.IO) { reverseGeocode(mapboxPublicToken, p, userCountryCode) }
                     if (!name.isNullOrBlank()) searchQuery = name
                 } catch (e: Exception) {
                     DebugLog.log("Error reverse geocoding pin: ${e.message}")
@@ -1164,6 +1224,20 @@ fun HomeScreen() {
         mapView.location.addOnIndicatorPositionChangedListener(onFirstIndicator)
         onDispose {
             mapView.location.removeOnIndicatorPositionChangedListener(onFirstIndicator)
+        }
+    }
+
+    LaunchedEffect(lastUserLocation, mapboxPublicToken) {
+        val p = lastUserLocation
+        if (p != null && mapboxPublicToken.isNotBlank()) {
+            try {
+                val code = withContext(Dispatchers.IO) { detectCountryCode(mapboxPublicToken, p) }
+                if (!code.isNullOrBlank() && code != userCountryCode) {
+                    userCountryCode = code
+                    DebugLog.log("Home: país detectado ${code} por geolocalización")
+                }
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -1789,10 +1863,10 @@ private fun SearchingDriverCard() {
 }
 
 private const val SEARCH_RADIUS_MILES = 20.0
-private const val SEARCH_SUGGESTIONS_LIMIT = 6
+private const val SEARCH_SUGGESTIONS_LIMIT = 10
 private const val HTTP_TIMEOUT_MS = 6000
 
-private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
+private fun parseAddressFeature(f: JSONObject, country: String): Pair<String, Point>? {
     val addressNum = f.optString("address", "")
     val streetName = f.optString("text", "")
     var city = ""
@@ -1807,7 +1881,13 @@ private fun parseAddressFeature(f: JSONObject): Pair<String, Point>? {
             }
         }
     }
-    val name = listOf(addressNum, streetName, city).filter { it.isNotBlank() }.joinToString(", ")
+    val primary = if (country.uppercase(Locale.getDefault()) == "PE") {
+        listOf(streetName, addressNum).filter { it.isNotBlank() }.joinToString(" ")
+    } else {
+        // USA y otros: número antes de la calle
+        listOf(addressNum, streetName).filter { it.isNotBlank() }.joinToString(" ")
+    }
+    val name = listOf(primary, city).filter { it.isNotBlank() }.joinToString(", ")
     val center = f.optJSONArray("center")
     return if (name.isNotBlank() && center != null && center.length() >= 2) {
         val lon = center.optDouble(0)
@@ -1823,34 +1903,256 @@ private suspend fun httpGet(url: String): String {
     conn.requestMethod = "GET"
     conn.doInput = true
     return try {
-        conn.inputStream.bufferedReader().use { it.readText() }
+        val code = conn.responseCode
+        val body = if (code in 200..299) {
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } else {
+            val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+            throw IOException("HTTP ${code}: ${err}")
+        }
+        body
     } finally {
         conn.disconnect()
     }
 }
 
-private suspend fun geocodeSuggestions(token: String, q: String, center: Point, bbox: String): List<Pair<String, Point>> {
-    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?types=address&autocomplete=true&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}&bbox=${bbox}&access_token=${token}"
+private suspend fun geocodeSuggestions(token: String, q: String, center: Point, bbox: String, country: String): List<Pair<String, Point>> {
+    val bboxParam = if (bbox.isNotBlank()) "&bbox=${bbox}" else ""
+    val countryParam = if (country.isNotBlank()) "&country=${country}" else ""
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?types=address,poi&autocomplete=true&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}${bboxParam}${countryParam}&access_token=${token}"
     val json = httpGet(url)
     val obj = JSONObject(json)
     val feats = obj.optJSONArray("features") ?: JSONArray()
     val out = mutableListOf<Pair<String, Point>>()
     for (i in 0 until feats.length()) {
         val f = feats.getJSONObject(i)
-        val parsed = parseAddressFeature(f)
+        val parsed = parseAddressFeature(f, country)
         if (parsed != null) out.add(parsed)
     }
+    DebugLog.log("Home: sugerencias ${out.size} para '${q}'")
     return out
 }
 
-private suspend fun reverseGeocode(token: String, p: Point): String? {
+private suspend fun geocodePoiByCategories(token: String, qRaw: String, center: Point, country: String): List<Pair<String, Point>> {
+    val enc = URLEncoder.encode(qRaw, "UTF-8")
+    val countryParam = if (country.isNotBlank()) "&country=${country}" else ""
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${enc}.json?types=poi&autocomplete=true&fuzzyMatch=true&categories=supermarket,grocery,shopping&limit=${SEARCH_SUGGESTIONS_LIMIT}&language=es&proximity=${center.longitude()},${center.latitude()}${countryParam}&access_token=${token}"
+    val json = httpGet(url)
+    val obj = JSONObject(json)
+    val feats = obj.optJSONArray("features") ?: JSONArray()
+    val out = mutableListOf<Pair<String, Point>>()
+    for (i in 0 until feats.length()) {
+        val f = feats.getJSONObject(i)
+        val parsed = parseAddressFeature(f, country)
+        if (parsed != null) out.add(parsed)
+    }
+    DebugLog.log("Home: fallback categorías ${out.size} para '${qRaw}'")
+    return out
+}
+
+// removed visiblePoiSuggestions fallback based on rendered features
+
+private suspend fun reverseGeocode(token: String, p: Point, country: String): String? {
     val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${p.longitude()},${p.latitude()}.json?types=address&language=es&limit=1&access_token=${token}"
     val json = httpGet(url)
     val obj = JSONObject(json)
     val feats = obj.optJSONArray("features") ?: JSONArray()
     if (feats.length() == 0) return null
-    val parsed = parseAddressFeature(feats.getJSONObject(0))
+    val parsed = parseAddressFeature(feats.getJSONObject(0), country)
     return parsed?.first
+}
+
+private suspend fun detectCountryCode(token: String, p: Point): String? {
+    return try {
+        val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${p.longitude()},${p.latitude()}.json?types=country&limit=1&access_token=${token}"
+        val json = httpGet(url)
+        val obj = JSONObject(json)
+        val feats = obj.optJSONArray("features") ?: JSONArray()
+        if (feats.length() > 0) {
+            val f = feats.getJSONObject(0)
+            val props = f.optJSONObject("properties")
+            val short = props?.optString("short_code", "") ?: ""
+            val code = short.uppercase(Locale.getDefault())
+            if (code == "US" || code == "PE") code else null
+        } else null
+    } catch (_: Exception) {
+        // Fallback por bounding boxes aproximados
+        val lat = p.latitude()
+        val lon = p.longitude()
+        val inPE = lat in -18.4..-0.0 && lon in -81.5..-68.5
+        val inUS = lat in 24.0..49.6 && lon in -125.0..-66.0
+        when {
+            inPE -> "PE"
+            inUS -> "US"
+            else -> null
+        }
+    }
+}
+
+private fun mergeSuggestions(a: List<Pair<String, Point>>, b: List<Pair<String, Point>>): List<Pair<String, Point>> {
+    val seen = mutableSetOf<String>()
+    val out = mutableListOf<Pair<String, Point>>()
+    fun norm(s: String) = s.lowercase(Locale.getDefault()).trim()
+    (a + b).forEach {
+        val k = norm(it.first)
+        if (seen.add(k)) out.add(it)
+        if (out.size >= SEARCH_SUGGESTIONS_LIMIT) return out
+    }
+    return out
+}
+
+private suspend fun googlePlacesAddressSuggestions(
+    context: android.content.Context,
+    apiKey: String,
+    q: String,
+    center: Point?,
+    country: String
+): List<Pair<String, Point>> {
+    if (apiKey.isBlank()) return emptyList()
+    if (!com.google.android.libraries.places.api.Places.isInitialized()) {
+        com.google.android.libraries.places.api.Places.initialize(context, apiKey, java.util.Locale("es"))
+    }
+    val client = com.google.android.libraries.places.api.Places.createClient(context)
+    val token = com.google.android.libraries.places.api.model.AutocompleteSessionToken.newInstance()
+    val builder = com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest.builder()
+        .setQuery(q)
+        .setTypeFilter(com.google.android.libraries.places.api.model.TypeFilter.ADDRESS)
+        .setSessionToken(token)
+    if (country.isNotBlank()) {
+        builder.setCountries(java.util.Arrays.asList(country))
+    } else {
+        builder.setCountries(java.util.Arrays.asList("US", "PE"))
+    }
+    if (center != null) {
+        val miles = SEARCH_RADIUS_MILES
+        val lat = center.latitude()
+        val lon = center.longitude()
+        val latDelta = miles / 69.0
+        val latRad = lat * Math.PI / 180.0
+        val lonDelta = miles / (69.0 * kotlin.math.cos(latRad))
+        val sw = com.google.android.gms.maps.model.LatLng(lat - latDelta, lon - lonDelta)
+        val ne = com.google.android.gms.maps.model.LatLng(lat + latDelta, lon + lonDelta)
+        builder.setLocationBias(com.google.android.libraries.places.api.model.RectangularBounds.newInstance(sw, ne))
+    }
+    val preds = kotlinx.coroutines.suspendCancellableCoroutine<com.google.android.libraries.places.api.net.FindAutocompletePredictionsResponse?> { cont ->
+        client.findAutocompletePredictions(builder.build())
+            .addOnSuccessListener { resp -> cont.resume(resp, onCancellation = { _ -> }) }
+            .addOnFailureListener { _ -> cont.resume(null, onCancellation = { _ -> }) }
+    } ?: return emptyList()
+    val out = mutableListOf<Pair<String, Point>>()
+    val list = preds.autocompletePredictions
+    for (p in list.take(SEARCH_SUGGESTIONS_LIMIT)) {
+        val req = com.google.android.libraries.places.api.net.FetchPlaceRequest.builder(
+            p.placeId,
+            java.util.Arrays.asList(
+                com.google.android.libraries.places.api.model.Place.Field.LAT_LNG,
+                com.google.android.libraries.places.api.model.Place.Field.ADDRESS_COMPONENTS,
+                com.google.android.libraries.places.api.model.Place.Field.NAME
+            )
+        ).setSessionToken(token).build()
+        val det = kotlinx.coroutines.suspendCancellableCoroutine<com.google.android.libraries.places.api.net.FetchPlaceResponse?> { cont ->
+            client.fetchPlace(req)
+                .addOnSuccessListener { resp -> cont.resume(resp, onCancellation = { _ -> }) }
+                .addOnFailureListener { _ -> cont.resume(null, onCancellation = { _ -> }) }
+        } ?: continue
+        val place = det.place
+        val latLng = place.latLng ?: continue
+        val comps = place.addressComponents?.asList() ?: emptyList()
+        fun compName(typeName: String): String {
+            val c = comps.firstOrNull { it.types.contains(typeName) }
+            return c?.name ?: ""
+        }
+        val street = compName("route")
+        val num = compName("street_number")
+        val city = listOf(
+            compName("locality"),
+            compName("sublocality"),
+            compName("administrative_area_level_3")
+        ).firstOrNull { it.isNotBlank() } ?: ""
+        val primary = if (country.uppercase(java.util.Locale.getDefault()) == "PE") {
+            listOf(street, num).filter { it.isNotBlank() }.joinToString(" ")
+        } else {
+            listOf(num, street).filter { it.isNotBlank() }.joinToString(" ")
+        }
+        val name = listOf(primary, city).filter { it.isNotBlank() }.joinToString(", ")
+        val point = Point.fromLngLat(latLng.longitude, latLng.latitude)
+        if (name.isNotBlank()) out.add(name to point)
+    }
+    return out
+}
+
+private suspend fun googlePlacesPoiSuggestions(
+    context: android.content.Context,
+    apiKey: String,
+    q: String,
+    center: Point?,
+    country: String
+): List<Pair<String, Point>> {
+    if (apiKey.isBlank()) return emptyList()
+    if (!com.google.android.libraries.places.api.Places.isInitialized()) {
+        com.google.android.libraries.places.api.Places.initialize(context, apiKey, java.util.Locale("es"))
+    }
+    val client = com.google.android.libraries.places.api.Places.createClient(context)
+    val token = com.google.android.libraries.places.api.model.AutocompleteSessionToken.newInstance()
+    val builder = com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest.builder()
+        .setQuery(q)
+        .setTypeFilter(com.google.android.libraries.places.api.model.TypeFilter.ESTABLISHMENT)
+        .setSessionToken(token)
+    if (country.isNotBlank()) {
+        builder.setCountries(java.util.Arrays.asList(country))
+    } else {
+        builder.setCountries(java.util.Arrays.asList("US", "PE"))
+    }
+    if (center != null) {
+        val miles = SEARCH_RADIUS_MILES
+        val lat = center.latitude()
+        val lon = center.longitude()
+        val latDelta = miles / 69.0
+        val latRad = lat * Math.PI / 180.0
+        val lonDelta = miles / (69.0 * kotlin.math.cos(latRad))
+        val sw = com.google.android.gms.maps.model.LatLng(lat - latDelta, lon - lonDelta)
+        val ne = com.google.android.gms.maps.model.LatLng(lat + latDelta, lon + lonDelta)
+        builder.setLocationBias(com.google.android.libraries.places.api.model.RectangularBounds.newInstance(sw, ne))
+    }
+    val preds = kotlinx.coroutines.suspendCancellableCoroutine<com.google.android.libraries.places.api.net.FindAutocompletePredictionsResponse?> { cont ->
+        client.findAutocompletePredictions(builder.build())
+            .addOnSuccessListener { resp -> cont.resume(resp, onCancellation = { _ -> }) }
+            .addOnFailureListener { _ -> cont.resume(null, onCancellation = { _ -> }) }
+    } ?: return emptyList()
+    val out = mutableListOf<Pair<String, Point>>()
+    val list = preds.autocompletePredictions
+    for (p in list.take(SEARCH_SUGGESTIONS_LIMIT)) {
+        val req = com.google.android.libraries.places.api.net.FetchPlaceRequest.builder(
+            p.placeId,
+            java.util.Arrays.asList(
+                com.google.android.libraries.places.api.model.Place.Field.LAT_LNG,
+                com.google.android.libraries.places.api.model.Place.Field.ADDRESS_COMPONENTS,
+                com.google.android.libraries.places.api.model.Place.Field.NAME
+            )
+        ).setSessionToken(token).build()
+        val det = kotlinx.coroutines.suspendCancellableCoroutine<com.google.android.libraries.places.api.net.FetchPlaceResponse?> { cont ->
+            client.fetchPlace(req)
+                .addOnSuccessListener { resp -> cont.resume(resp, onCancellation = { _ -> }) }
+                .addOnFailureListener { _ -> cont.resume(null, onCancellation = { _ -> }) }
+        } ?: continue
+        val place = det.place
+        val latLng = place.latLng ?: continue
+        val namePrimary = place.name ?: ""
+        val comps = place.addressComponents?.asList() ?: emptyList()
+        fun compName(typeName: String): String {
+            val c = comps.firstOrNull { it.types.contains(typeName) }
+            return c?.name ?: ""
+        }
+        val city = listOf(
+            compName("locality"),
+            compName("sublocality"),
+            compName("administrative_area_level_3")
+        ).firstOrNull { it.isNotBlank() } ?: ""
+        val name = listOf(namePrimary, city).filter { it.isNotBlank() }.joinToString(", ")
+        val point = Point.fromLngLat(latLng.longitude, latLng.latitude)
+        if (name.isNotBlank()) out.add(name to point)
+    }
+    return out
 }
 
 private fun calcFare(distanceKm: Double?, durationMin: Double?, base: Double, perKm: Double, perMin: Double, multiplier: Double = 1.0): Double {

@@ -51,12 +51,14 @@ android {
         if (file.exists()) file.inputStream().use { load(it) }
     }
     val mapboxPublicToken = localProps.getProperty("MAPBOX_PUBLIC_TOKEN") ?: ""
+    val googlePlacesApiKey = localProps.getProperty("GOOGLE_PLACES_API_KEY") ?: ""
     val functionsRegion = localProps.getProperty("FUNCTIONS_REGION") ?: "us-central1"
     val functionsEmuHost = localProps.getProperty("FUNCTIONS_EMULATOR_HOST") ?: "10.0.2.2"
     val functionsEmuPort = localProps.getProperty("FUNCTIONS_EMULATOR_PORT") ?: "5001"
     val functionsEmuEnabled = (localProps.getProperty("FUNCTIONS_EMULATOR_ENABLED") ?: "false").lowercase() == "true"
     defaultConfig {
         resValue("string", "mapbox_access_token", mapboxPublicToken)
+        resValue("string", "google_places_api_key", googlePlacesApiKey)
         resValue("string", "functions_region", functionsRegion)
         resValue("string", "functions_emulator_host", functionsEmuHost)
         resValue("string", "functions_emulator_port", functionsEmuPort)
@@ -85,6 +87,7 @@ dependencies {
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.storage.ktx)
     implementation("com.google.firebase:firebase-functions-ktx")
+    implementation("com.google.android.libraries.places:places:3.4.0")
     implementation(libs.coil.compose)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.splashscreen)

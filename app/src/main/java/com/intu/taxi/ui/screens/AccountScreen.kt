@@ -941,7 +941,7 @@ private fun ContactCard(
             if (countryExpanded) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PaymentPill(label = stringResource(R.string.country_peru), selected = country == "peru", accent = Color(0xFF0D9488)) { onSelectCountry("peru") }
-                    PaymentPill(label = stringResource(R.string.country_usa), selected = country == "usa", accent = Color(0xFF0F172A), enabled = false) { }
+                    PaymentPill(label = stringResource(R.string.country_usa), selected = country == "usa", accent = Color(0xFF0F172A)) { onSelectCountry("usa") }
                 }
             }
             HorizontalDivider()
