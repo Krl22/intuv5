@@ -50,6 +50,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -166,6 +167,10 @@ fun DriverHomeScreen() {
     var showRatingDialog by remember { mutableStateOf(false) }
     var lastCompletedRideId by remember { mutableStateOf<String?>(null) }
     var lastCompletedTargetUserId by remember { mutableStateOf<String?>(null) }
+    var loadingCurrentRide by remember { mutableStateOf(false) }
+    var verifyingStartCode by remember { mutableStateOf(false) }
+    var completingRide by remember { mutableStateOf(false) }
+    var submittingRating by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
@@ -352,6 +357,7 @@ fun DriverHomeScreen() {
                                 RideRequestFancyCard(
                                     item = r,
                                     onAccept = {
+                                        loadingCurrentRide = true
                                         com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
                                             .getHttpsCallable("acceptRide")
                                             .call(mapOf("rideRequestId" to r.id))
@@ -361,6 +367,7 @@ fun DriverHomeScreen() {
                                                 com.intu.taxi.ui.debug.DebugLog.log("AcceptRide OK id=${r.id}")
                                             }
                                             .addOnFailureListener { e ->
+                                                loadingCurrentRide = false
                                                 com.intu.taxi.ui.debug.DebugLog.log("AcceptRide error: ${e.message}")
                                             }
                                     }
@@ -404,7 +411,8 @@ fun DriverHomeScreen() {
                                     AsyncImage(
                                         model = photo,
                                         contentDescription = null,
-                                        modifier = Modifier.size(56.dp).background(Color(0xFFE5E7EB), CircleShape).clip(CircleShape)
+                                        modifier = Modifier.size(56.dp).background(Color(0xFFE5E7EB), CircleShape).clip(CircleShape),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                     )
                                 } else {
                                     Box(modifier = Modifier.size(56.dp).background(Color(0xFFE5E7EB), CircleShape)) {}
@@ -452,7 +460,7 @@ fun DriverHomeScreen() {
                                     androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Settings, contentDescription = null)
                                 }
                             }
-                            if (!isArrived && !isInProgress) {
+                            if (!isInProgress) {
                                 androidx.compose.foundation.layout.Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
@@ -461,11 +469,13 @@ fun DriverHomeScreen() {
                                         onClick = {
                                             val rid = currentRideId
                                             if (rid != null) {
-                                                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                                    .getHttpsCallable("driverArrived")
-                                                    .call(mapOf("currentRideId" to rid))
-                                                    .addOnSuccessListener { isArrived = true; com.intu.taxi.ui.debug.DebugLog.log("DriverArrived OK") }
-                                                    .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("DriverArrived error: ${e.message}") }
+                                                if (!isArrived) {
+                                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                                        .getHttpsCallable("driverArrived")
+                                                        .call(mapOf("currentRideId" to rid))
+                                                        .addOnSuccessListener { isArrived = true; com.intu.taxi.ui.debug.DebugLog.log("DriverArrived OK") }
+                                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("DriverArrived error: ${e.message}") }
+                                                }
                                                 showCodeDialog = true
                                             }
                                         },
@@ -475,7 +485,7 @@ fun DriverHomeScreen() {
                                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                                     ) {
-                                        androidx.compose.material3.Text(text = "Llegué al cliente", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        androidx.compose.material3.Text(text = if (!isArrived) "Llegué al cliente" else "Ingresar código", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                     }
                                     androidx.compose.material3.Button(
                                         onClick = {
@@ -488,6 +498,7 @@ fun DriverHomeScreen() {
                                                         isCurrentRide = false
                                                         currentRideId = null
                                                         isArrived = false
+                                                        isInProgress = false
                                                         clientLiveLocation = null
                                                         showCodeDialog = false
                                                         mapView.mapboxMap.getStyle { style ->
@@ -520,6 +531,7 @@ fun DriverHomeScreen() {
                                                 val rid = currentRideId
                                                 val targetUserIdSnapshot = currentRideUserId
                                                 if (rid != null) {
+                                                    completingRide = true
                                                     com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
                                                         .getHttpsCallable("completeRide")
                                                         .call(mapOf("currentRideId" to rid, "finalPrice" to (currentRidePrice ?: 0.0)))
@@ -542,9 +554,11 @@ fun DriverHomeScreen() {
                                                                 lastCompletedRideId = rid
                                                                 lastCompletedTargetUserId = uidUser
                                                                 com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: abrir dialog rid=${rid} target=${uidUser}")
+                                                                completingRide = false
                                                                 showRatingDialog = true
                                                             } else {
                                                                 com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: userId vacío, no se puede abrir dialog")
+                                                                completingRide = false
                                                             }
                                                             isCurrentRide = false
                                                             currentRideId = null
@@ -564,7 +578,7 @@ fun DriverHomeScreen() {
                                                                 try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
                                                             }
                                                         }
-                                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CompleteRide error: ${e.message}") }
+                                                        .addOnFailureListener { e -> completingRide = false; com.intu.taxi.ui.debug.DebugLog.log("CompleteRide error: ${e.message}") }
                                                 }
                                             },
                                             modifier = Modifier
@@ -573,7 +587,11 @@ fun DriverHomeScreen() {
                                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                                         ) {
-                                            androidx.compose.material3.Text(text = "Completar viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            if (completingRide) {
+                                                androidx.compose.material3.CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+                                            } else {
+                                                androidx.compose.material3.Text(text = "Completar viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                         androidx.compose.material3.Button(
                                             onClick = {
@@ -660,24 +678,109 @@ fun DriverHomeScreen() {
                                 singleLine = true,
                                 label = { androidx.compose.material3.Text("Código de 4 dígitos") }
                             )
+                            if (verifyingStartCode) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                androidx.compose.material3.CircularProgressIndicator(color = Color(0xFF0D9488))
+                            }
                         },
                         confirmButton = {
                             androidx.compose.material3.Button(onClick = {
+                                verifyingStartCode = true
                                 val rid = currentRideId
                                 val codeNum = codeInput.toIntOrNull()
                                 if (rid != null && codeNum != null) {
                                     com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
                                         .getHttpsCallable("verifyStartCode")
                                         .call(mapOf("currentRideId" to rid, "code" to codeNum))
-                                        .addOnSuccessListener { showCodeDialog = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode OK") }
-                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode error: ${e.message}") }
+                                        .addOnSuccessListener { showCodeDialog = false; verifyingStartCode = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode OK") }
+                                        .addOnFailureListener { e -> verifyingStartCode = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode error: ${e.message}") }
+                                } else {
+                                    verifyingStartCode = false
                                 }
-                            }) { androidx.compose.material3.Text("Validar") }
+                            }, enabled = !verifyingStartCode) {
+                                if (verifyingStartCode) {
+                                    androidx.compose.material3.Text("Validando...")
+                                } else {
+                                    androidx.compose.material3.Text("Validar")
+                                }
+                            }
                         },
                         dismissButton = {
-                            androidx.compose.material3.OutlinedButton(onClick = { showCodeDialog = false }) { androidx.compose.material3.Text("Cancelar") }
+                            androidx.compose.material3.OutlinedButton(onClick = { showCodeDialog = false }, enabled = !verifyingStartCode) { androidx.compose.material3.Text("Cancelar") }
                         }
                     )
+                }
+            }
+        }
+        if (loadingCurrentRide) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+                    elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 12.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF0D9488))
+                        Text("Cargando viaje en curso...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                    }
+                }
+            }
+        }
+        if (completingRide) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+                    elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 12.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF0D9488))
+                        Text("Completando viaje...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                    }
+                }
+            }
+        }
+        if (submittingRating) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
+                    elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 12.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF0D9488))
+                        Text("Enviando reseña...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                    }
                 }
             }
         }
@@ -692,6 +795,7 @@ fun DriverHomeScreen() {
             showRatingDialog = false
         },
         onSubmit = { stars, _ ->
+            submittingRating = true
             val rideId = lastCompletedRideId
             val targetUserId = lastCompletedTargetUserId
             if (!rideId.isNullOrBlank() && !targetUserId.isNullOrBlank()) {
@@ -705,13 +809,16 @@ fun DriverHomeScreen() {
                     ))
                     .addOnSuccessListener {
                         com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: submit OK rid=${rideId} stars=${stars}")
+                        submittingRating = false
                         showRatingDialog = false
                     }
                     .addOnFailureListener { e ->
                         com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: submit error ${e.message}")
+                        submittingRating = false
                     }
             } else {
                 com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: datos inválidos para submit (rideId/target)")
+                submittingRating = false
                 showRatingDialog = false
             }
         }
@@ -800,6 +907,7 @@ fun DriverHomeScreen() {
                     val first = snapshot.children.firstOrNull()
                     currentRideId = first?.key
                     isCurrentRide = currentRideId != null
+                    if (isCurrentRide) loadingCurrentRide = false
                     val statusStr = first?.child("status")?.getValue(String::class.java)
                     isArrived = (statusStr == "arrived")
                     isInProgress = (statusStr == "in_progress")

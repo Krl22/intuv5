@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenu
@@ -26,6 +27,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,14 +82,36 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        MaterialTheme.colorScheme.surface
-                    )
+            .drawBehind {
+                val teal = Color(0xFF08817E)
+                val indigo = Color(0xFF1E1F47)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(teal, indigo),
+                        center = androidx.compose.ui.geometry.Offset(0.1f, 0.1f),
+                        radius = size.height * 0.9f
+                    ),
+                    size = size
                 )
-            )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.White.copy(alpha = 1.0f),
+                            0.70f to Color.White.copy(alpha = 1.0f),
+                            0.75f to Color.White.copy(alpha = 0.95f),
+                            0.80f to Color.White.copy(alpha = 0.85f),
+                            0.85f to Color.White.copy(alpha = 0.70f),
+                            0.90f to Color.White.copy(alpha = 0.45f),
+                            0.95f to Color.White.copy(alpha = 0.25f),
+                            1.00f to Color.Transparent
+                        ),
+                        center = androidx.compose.ui.geometry.Offset(0f, 0f),
+                        radius = kotlin.math.max(size.width, size.height)
+                    ),
+                    size = size,
+                    blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                )
+            }
     ) {
         Column(Modifier
             .fillMaxWidth()
@@ -91,15 +121,32 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                 "Iniciar con teléfono",
                 style = MaterialTheme.typography.headlineSmall,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                color = Color.White
             )
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.14f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.35f))
             ) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFF14B8A6).copy(alpha = 0.18f),
+                                    Color(0xFF4F46E5).copy(alpha = 0.08f),
+                                    Color.Transparent
+                                ),
+                                center = androidx.compose.ui.geometry.Offset(0.7f, 0.2f),
+                                radius = 700f
+                            )
+                        )
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     ExposedDropdownMenuBox(expanded = countryExpanded.value, onExpandedChange = { countryExpanded.value = !countryExpanded.value }) {
                         TextField(
                             value = countryCode.value,
@@ -123,14 +170,28 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                         value = phone.value,
                         onValueChange = { phone.value = it.filter { ch -> ch.isDigit() } },
                         label = { Text("Teléfono (+NNNN...)") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF08817E)) },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedIndicatorColor = Color(0xFF08817E),
+                            unfocusedIndicatorColor = Color(0x661E1F47),
+                            cursorColor = Color(0xFF08817E)
+                        )
                     )
                     if (verificationId.value != null) {
                         OutlinedTextField(
                             value = code.value,
                             onValueChange = { code.value = it.filter { ch -> ch.isDigit() } },
                             label = { Text("Código SMS") },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = Color(0xFF1E1F47)) },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = Color(0xFF1E1F47),
+                                unfocusedIndicatorColor = Color(0x6608817E),
+                                cursorColor = Color(0xFF1E1F47)
+                            )
                         )
                     }
                     Button(onClick = {
@@ -216,8 +277,22 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                 }
                             }
                         }
-                    }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = Color.White), enabled = !loading.value) {
-                        Text(if (verificationId.value == null) "Enviar código" else "Verificar código")
+                    },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF08817E), Color(0xFF1E1F47))
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !loading.value) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (verificationId.value == null) Icons.Filled.Phone else Icons.Filled.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Text(if (verificationId.value == null) "Enviar código" else "Verificar código")
+                        }
                     }
                     if (verificationId.value != null) {
                         OutlinedButton(
@@ -277,7 +352,8 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !loading.value && resendToken.value != null
+                            enabled = !loading.value && resendToken.value != null,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E1F47))
                         ) {
                             Text("Reenviar código")
                         }
@@ -287,8 +363,16 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
 
             Divider()
 
-            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), enabled = !loading.value) { Text("Volver") }
-            if (status.value.isNotEmpty()) Text(status.value, color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(12.dp)),
+                shape = RoundedCornerShape(12.dp),
+                enabled = !loading.value,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+            ) { Text("Volver") }
+            if (status.value.isNotEmpty()) Text(status.value, color = Color.White)
         }
     }
 }

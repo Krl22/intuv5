@@ -1379,7 +1379,7 @@ fun HomeScreen() {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)) {
                             val vehPhoto = currentRideVehiclePhoto
                             if (!vehPhoto.isNullOrBlank()) {
-                                AsyncImage(model = vehPhoto, contentDescription = null, modifier = Modifier.size(120.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFF3F4F6)))
+                                AsyncImage(model = vehPhoto, contentDescription = null, modifier = Modifier.size(120.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFF3F4F6)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                             } else {
                                 Box(modifier = Modifier.size(120.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(Color(0xFF0D9488), Color(0xFF0F172A)))), contentAlignment = Alignment.Center) {
                                     Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
@@ -1396,7 +1396,7 @@ fun HomeScreen() {
                                 val dName = currentRideDriverName ?: "—"
                                 Box(modifier = Modifier.size(64.dp).clip(CircleShape).background(Color(0xFFF3F4F6)), contentAlignment = Alignment.Center) {
                                     if (!dPhoto.isNullOrBlank()) {
-                                        AsyncImage(model = dPhoto, contentDescription = null, modifier = Modifier.size(64.dp).clip(CircleShape))
+                                        AsyncImage(model = dPhoto, contentDescription = null, modifier = Modifier.size(64.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                                     } else {
                                         Icon(Icons.Filled.Person, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(28.dp))
                                     }

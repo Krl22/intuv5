@@ -50,7 +50,7 @@
     <string name="week_summary">Semana: S/ 840.00 · 42 viajes</string>
     <string name="recent_trips_label">Últimos viajes</string>
 
-    <string name="gain_with_intu">Ganar con Intu</string>
+    <string name="gain_with_intu">Modo conductor</string>
     <string name="driver_review_pending">Solicitud en revisión</string>
     <string name="driver_review_help">Tu solicitud está siendo revisada</string>
     <string name="driver_complete_data">Completa datos de vehículo y licencia</string>
@@ -76,7 +76,7 @@
     <string name="verify_and_link">Verificar y vincular</string>
     <string name="phone_linked_success">Número vinculado</string>
     <string name="code_sent">Código enviado</string>
-    <string name="drive_and_earn_section">Conduce y gana</string>
+    <string name="drive_and_earn_section">Modo conductor</string>
     <string name="services_this_month">12 servicios este mes</string>
     <string name="trips_this_month">3 viajes este mes</string>
     <string name="nav_home">Inicio</string>

@@ -104,6 +104,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.scale
@@ -540,7 +541,12 @@ private fun ClientHeader(title: String, photoUrl: String, onChangePhoto: () -> U
                         contentAlignment = Alignment.Center
                     ) {
                         if (photoUrl.isNotBlank()) {
-                            AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(74.dp).clip(CircleShape))
+                            AsyncImage(
+                                model = photoUrl,
+                                contentDescription = null,
+                                modifier = Modifier.size(74.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
                         } else {
                             Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
                         }
