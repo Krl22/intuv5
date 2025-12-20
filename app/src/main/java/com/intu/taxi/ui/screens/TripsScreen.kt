@@ -73,7 +73,8 @@ data class ClientTrip(
     val from: String,
     val to: String,
     val price: String,
-    val status: String
+    val status: String,
+    val currencySymbol: String
 )
 
 data class DriverTrip(
@@ -82,7 +83,8 @@ data class DriverTrip(
     val pickup: String,
     val dropoff: String,
     val fare: String,
-    val status: String
+    val status: String,
+    val currencySymbol: String
 )
 
 data class DriverStats(
@@ -137,9 +139,9 @@ private fun reverseGeocodeStreetCity(mapboxToken: String, lon: Double?, lat: Dou
     } catch (_: Exception) { null }
 }
 
-private fun formatPriceSoles(p: Double?): String {
+private fun formatPrice(p: Double?, symbol: String = "S/"): String {
     val v = p ?: 0.0
-    return "S/ " + String.format(Locale.getDefault(), "%.2f", v)
+    return "$symbol " + String.format(Locale.getDefault(), "%.2f", v)
 }
 
 private fun anyToDate(any: Any?): java.util.Date? {
@@ -171,6 +173,8 @@ fun TripsScreen() {
     val clientTripsState = remember { mutableStateOf<List<ClientTrip>>(emptyList()) }
     val driverTripsState = remember { mutableStateOf<List<DriverTrip>>(emptyList()) }
     var driverStats by remember { mutableStateOf<DriverStats?>(null) }
+    var userCountry by remember { mutableStateOf("peru") }
+    
     DisposableEffect(uid) {
         val db = FirebaseFirestore.getInstance()
         var reg: com.google.firebase.firestore.ListenerRegistration? = null
@@ -178,6 +182,7 @@ fun TripsScreen() {
             reg = db.collection("users").document(uid).addSnapshotListener { doc, _ ->
                 driverApproved.value = doc?.getBoolean("driverApproved") == true
                 driverMode.value = doc?.getBoolean("driverMode") == true
+                userCountry = doc?.getString("country") ?: "peru"
                 com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: snapshot driverApproved=" + driverApproved.value + ", driverMode=" + driverMode.value)
             }
         }
@@ -210,9 +215,10 @@ fun TripsScreen() {
                                     val dLon = d.getDouble("destLon")
                                     val pickupLabel = reverseGeocodeStreetCity(mapboxToken, oLon, oLat) ?: formatCoord(oLat, oLon)
                                     val dropoffLabel = reverseGeocodeStreetCity(mapboxToken, dLon, dLat) ?: formatCoord(dLat, dLon)
-                                    val fare = formatPriceSoles(d.getDouble("price"))
+                                    val symbol = d.getString("currencySymbol") ?: (if (d.getString("currency") == "USD") "$" else "S/")
+                                    val fare = formatPrice(d.getDouble("price"), symbol)
                                     val status = d.getString("status") ?: "—"
-                                    DriverTrip(id, passenger, pickupLabel, dropoffLabel, fare, status)
+                                    DriverTrip(id, passenger, pickupLabel, dropoffLabel, fare, status, symbol)
                                 }.getOrNull()
                             }
                             com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: services documentos=" + qs.documents.size)
@@ -255,9 +261,10 @@ fun TripsScreen() {
                                     val dLon = d.getDouble("destLon")
                                     val fromLabel = reverseGeocodeStreetCity(mapboxToken, oLon, oLat) ?: formatCoord(oLat, oLon)
                                     val toLabel = reverseGeocodeStreetCity(mapboxToken, dLon, dLat) ?: formatCoord(dLat, dLon)
-                                    val price = formatPriceSoles(d.getDouble("price"))
+                                    val symbol = d.getString("currencySymbol") ?: (if (d.getString("currency") == "USD") "$" else "S/")
+                                    val price = formatPrice(d.getDouble("price"), symbol)
                                     val status = d.getString("status") ?: "—"
-                                    ClientTrip(id, date, fromLabel, toLabel, price, status)
+                                    ClientTrip(id, date, fromLabel, toLabel, price, status, symbol)
                                 }.getOrNull()
                             }
                             com.intu.taxi.ui.debug.DebugLog.log("TripsScreen: trips documentos=" + qs.documents.size)
@@ -281,7 +288,7 @@ fun TripsScreen() {
                 EnhancedHeader(isDriver)
             }
             AnimatedVisibility(visible = contentVisible.value, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) {
-                if (isDriver) DriverContent(driverTripsState.value, driverStats) else ClientContent(clientTripsState.value)
+                if (isDriver) DriverContent(driverTripsState.value, driverStats, userCountry) else ClientContent(clientTripsState.value)
             }
         }
     }
@@ -310,7 +317,7 @@ private fun ClientContent(trips: List<ClientTrip>) {
 }
 
 @Composable
-private fun DriverContent(trips: List<DriverTrip>, stats: DriverStats?) {
+private fun DriverContent(trips: List<DriverTrip>, stats: DriverStats?, userCountry: String = "peru") {
     var selectedTab = remember { mutableStateOf(0) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -325,7 +332,7 @@ private fun DriverContent(trips: List<DriverTrip>, stats: DriverStats?) {
         if (selectedTab.value == 0) {
             items(trips) { trip -> DriverTripCard(trip) }
         } else {
-            item { DriverDashboard(stats) }
+            item { DriverDashboard(stats, userCountry) }
         }
     }
 }
@@ -430,11 +437,12 @@ private fun DriverTripCard(trip: DriverTrip) {
 }
 
 @Composable
-private fun DriverDashboard(stats: DriverStats?) {
+private fun DriverDashboard(stats: DriverStats?, userCountry: String = "peru") {
     val s = stats
+    val symbol = if (userCountry == "peru") "S/" else "$"
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            val todayValue = if (s != null) "S/ ${String.format("%.2f", s.todayEarnings)}" else "S/ —"
+            val todayValue = if (s != null) "$symbol ${String.format("%.2f", s.todayEarnings)}" else "$symbol —"
             val tripsValue = if (s != null) s.todayTrips.toString() else "—"
             MetricTile(modifier = Modifier.weight(1f), title = "Ingresos hoy", value = todayValue, accent = Color(0xFF10B981))
             MetricTile(modifier = Modifier.weight(1f), title = "Viajes", value = tripsValue, accent = Color(0xFF1E88E5))

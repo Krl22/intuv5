@@ -181,15 +181,67 @@ fun LoginScreen(onLoggedIn: () -> Unit, onPhoneLogin: () -> Unit) {
 
 @Composable
 private fun GoogleIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val stroke = Stroke(width = size.minDimension * 0.22f, cap = StrokeCap.Round)
-        drawArc(color = Color(0xFF4285F4), startAngle = 210f, sweepAngle = 90f, useCenter = false, style = stroke)
-        drawArc(color = Color(0xFFEA4335), startAngle = 300f, sweepAngle = 70f, useCenter = false, style = stroke)
-        drawArc(color = Color(0xFFFBBC05), startAngle = 20f, sweepAngle = 100f, useCenter = false, style = stroke)
-        drawArc(color = Color(0xFF34A853), startAngle = 120f, sweepAngle = 80f, useCenter = false, style = stroke)
-        val y = size.height * 0.5f
-        val x1 = size.width * 0.55f
-        val x2 = size.width * 0.90f
-        drawLine(color = Color(0xFF4285F4), start = androidx.compose.ui.geometry.Offset(x1, y), end = androidx.compose.ui.geometry.Offset(x2, y), strokeWidth = stroke.width, cap = StrokeCap.Round)
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.18f
+        val r = (size.minDimension - strokeWidth) / 2
+        val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
+        
+        val blue = Color(0xFF4285F4)
+        val red = Color(0xFFEA4335)
+        val yellow = Color(0xFFFBBC05)
+        val green = Color(0xFF34A853)
+        
+        // Blue Bar (Center to Right)
+        drawLine(
+            color = blue,
+            start = center,
+            end = androidx.compose.ui.geometry.Offset(center.x + r + strokeWidth / 2, center.y),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Butt
+        )
+        
+        // Blue Arc (Right/Bottom-Right)
+        drawArc(
+            color = blue,
+            startAngle = 0f,
+            sweepAngle = 45f,
+            useCenter = false,
+            topLeft = center - androidx.compose.ui.geometry.Offset(r, r),
+            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+            style = Stroke(strokeWidth, cap = StrokeCap.Butt)
+        )
+        
+        // Green Arc (Bottom)
+        drawArc(
+            color = green,
+            startAngle = 45f,
+            sweepAngle = 90f,
+            useCenter = false,
+            topLeft = center - androidx.compose.ui.geometry.Offset(r, r),
+            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+            style = Stroke(strokeWidth, cap = StrokeCap.Butt)
+        )
+        
+        // Yellow Arc (Left)
+        drawArc(
+            color = yellow,
+            startAngle = 135f,
+            sweepAngle = 90f,
+            useCenter = false,
+            topLeft = center - androidx.compose.ui.geometry.Offset(r, r),
+            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+            style = Stroke(strokeWidth, cap = StrokeCap.Butt)
+        )
+        
+        // Red Arc (Top)
+        drawArc(
+            color = red,
+            startAngle = 225f,
+            sweepAngle = 90f, // Ends at 315 (-45)
+            useCenter = false,
+            topLeft = center - androidx.compose.ui.geometry.Offset(r, r),
+            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+            style = Stroke(strokeWidth, cap = StrokeCap.Butt)
+        )
     }
 }

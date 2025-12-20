@@ -277,6 +277,22 @@ fun HomeScreen() {
     var selectedRide by remember { mutableStateOf<String?>(null) }
     var paymentMethod by remember { mutableStateOf("efectivo") }
     var userCountryCode by remember { mutableStateOf("") }
+    var userProfileCountry by remember { mutableStateOf<String?>(null) }
+    
+    // Listen for user profile country
+    DisposableEffect(Unit) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+        var reg: com.google.firebase.firestore.ListenerRegistration? = null
+        if (uid != null) {
+            reg = FirebaseFirestore.getInstance().collection("users").document(uid).addSnapshotListener { doc, _ ->
+                userProfileCountry = doc?.getString("country")
+            }
+        }
+        onDispose { reg?.remove() }
+    }
+    
+    val currencySymbol = if (userProfileCountry == "peru" || (userProfileCountry == null && userCountryCode == "PE")) "S/" else "$"
+
     var isSearchingDriver by remember { mutableStateOf(false) }
     var currentRideRequestId by remember { mutableStateOf<String?>(null) }
     var currentRideId by remember { mutableStateOf<String?>(null) }
@@ -2385,7 +2401,8 @@ private fun RideOptionSlideCard(
     option: RideOptionData,
     isSelected: Boolean,
     onClick: () -> Unit,
-    index: Int
+    index: Int,
+    currencySymbol: String = "S/"
 ) {
     val scale by animateFloatAsState(
         targetValue = if (isSelected) 1.05f else 0.95f,
@@ -2480,7 +2497,7 @@ private fun RideOptionSlideCard(
                 )
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                val priceStr = String.format(Locale.getDefault(), "$%.2f", option.price)
+                val priceStr = String.format(Locale.getDefault(), "$currencySymbol%.2f", option.price)
                 val etaMin = kotlin.math.max(1.0, option.minutes)
                 val etaStr = String.format(Locale.getDefault(), "~%.0f min", etaMin)
                 Text(
@@ -2510,7 +2527,8 @@ private fun RideOptionsSlider(
     options: List<RideOptionData>,
     selectedOptionName: String?,
     onOptionSelected: (String) -> Unit,
-    initialSelectedIndex: Int = 0
+    initialSelectedIndex: Int = 0,
+    currencySymbol: String = "S/"
 ) {
     val listState = rememberLazyListState()
     val snappingLayout = remember(listState) { SnapLayoutInfoProvider(listState) }
@@ -2568,7 +2586,8 @@ private fun RideOptionsSlider(
                     option = option,
                     isSelected = (selectedOptionName == option.name),
                     onClick = { onOptionSelected(option.name) },
-                    index = baseIndex
+                    index = baseIndex,
+                    currencySymbol = currencySymbol
                 )
             }
         }

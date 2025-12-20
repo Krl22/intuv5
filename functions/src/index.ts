@@ -221,12 +221,24 @@ export const completeRide = onCall(
     const createdAt = cur?.createdAt ?? undefined;
     const verifiedAt = cur?.verifiedAt ?? undefined;
     const arrivedAt = cur?.arrivedAt ?? undefined;
+
+    let userCountry = "peru";
+    if (userId) {
+      const userDoc = await fs.collection("users").doc(userId).get();
+      const u = userDoc.exists ? userDoc.data() || {} : {};
+      userCountry = (u.country as string) || "peru";
+    }
+    const currency = userCountry === "peru" ? "PEN" : "USD";
+    const currencySymbol = userCountry === "peru" ? "S/" : "$";
+
     const tripData: Record<string, any> = {
       rideId: currentRideId,
       status: "completed",
       paymentMethod,
       rideType,
       price,
+      currency,
+      currencySymbol,
       originLat,
       originLon,
       destLat,
@@ -253,6 +265,16 @@ export const completeRide = onCall(
           .doc(driverId)
           .collection("services")
           .add(tripData)
+      );
+      // Deduct 10% commission from driver balance
+      const commission = price * 0.1;
+      writes.push(
+        fs
+          .collection("users")
+          .doc(driverId)
+          .update({
+            balance: FieldValue.increment(-commission),
+          })
       );
     }
     const results = await Promise.all(writes);
@@ -397,10 +419,19 @@ export const submitRating = onCall(
     await fs.runTransaction(async (tx) => {
       const snap = await tx.get(targetRef);
       const data = snap.exists ? snap.data() || {} : {};
-      const key = role === "driver" ? "driverRatings" : "passengerRatings";
+
+      // Determine subcollection and summary key based on role
+      const ratingCollectionName =
+        role === "driver" ? "driver_ratings" : "passenger_ratings";
       const sumKey = role === "driver" ? "driverRating" : "passengerRating";
-      const existing = ((data[key] as Record<string, any>) || {})[rideId];
-      if (existing) throw new HttpsError("already-exists", "Rating duplicado");
+
+      // Check for duplicate rating in the subcollection
+      const ratingRef = targetRef.collection(ratingCollectionName).doc(rideId);
+      const ratingSnap = await tx.get(ratingRef);
+      if (ratingSnap.exists) {
+        throw new HttpsError("already-exists", "Rating duplicado");
+      }
+
       const now = FieldValue.serverTimestamp();
       const entry: any = { rideId, raterId, stars: s, createdAt: now };
       if (
@@ -410,16 +441,22 @@ export const submitRating = onCall(
       ) {
         entry["comment"] = comment.trim();
       }
-      const updates: Record<string, any> = {};
-      updates[`${key}.${rideId}`] = entry;
+
+      // Write to subcollection
+      tx.set(ratingRef, entry);
+
+      // Update aggregation in user document
       const summary = (data[sumKey] as any) || {};
       const prevCount = Number(summary?.count ?? 0);
       const prevSum = Number(summary?.sum ?? 0);
       const newCount = prevCount + 1;
       const newSum = prevSum + s;
       const newAvg = newSum / newCount;
+
+      const updates: Record<string, any> = {};
       updates[sumKey] = { count: newCount, sum: newSum, average: newAvg };
       tx.set(targetRef, updates, { merge: true });
+
       return null;
     });
     return { ok: true };
