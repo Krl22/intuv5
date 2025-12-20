@@ -37,7 +37,7 @@ fun VerifyPhoneScreen(phone: String, onFinished: () -> Unit) {
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
             override fun onVerificationCompleted(credential: PhoneAuthCredential) {
                 auth.currentUser?.linkWithCredential(credential)?.addOnSuccessListener {
-                    status.value = "Número vinculado"
+                    status.value = context.getString(com.intu.taxi.R.string.number_linked)
                     val uid = auth.currentUser?.uid
                     if (uid != null) {
                         FirebaseFirestore.getInstance().collection("users").document(uid)
@@ -46,8 +46,8 @@ fun VerifyPhoneScreen(phone: String, onFinished: () -> Unit) {
                     onFinished()
                 }
             }
-            override fun onVerificationFailed(e: FirebaseException) { status.value = "Error: ${e.message ?: "verificación"}" }
-            override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId.value = vid; status.value = "Código enviado" }
+            override fun onVerificationFailed(e: FirebaseException) { status.value = "${context.getString(com.intu.taxi.R.string.error_prefix)} ${e.message ?: "verificación"}" }
+            override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId.value = vid; status.value = context.getString(com.intu.taxi.R.string.code_sent_status) }
         }
         val options = PhoneAuthOptions.newBuilder(auth)
             .setPhoneNumber(phone)
@@ -59,15 +59,15 @@ fun VerifyPhoneScreen(phone: String, onFinished: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Verificación de número")
-        Text("Se envió un código a $phone")
-        OutlinedTextField(value = code.value, onValueChange = { code.value = it.filter { ch -> ch.isDigit() } }, label = { Text("Código SMS") }, modifier = Modifier.fillMaxWidth())
+        Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.verify_phone_title))
+        Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.code_sent_to, phone))
+        OutlinedTextField(value = code.value, onValueChange = { code.value = it.filter { ch -> ch.isDigit() } }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.sms_code_label)) }, modifier = Modifier.fillMaxWidth())
         Button(onClick = {
             val vid = verificationId.value
             if (vid != null) {
                 val cred = PhoneAuthProvider.getCredential(vid, code.value)
                 auth.currentUser?.linkWithCredential(cred)?.addOnSuccessListener {
-                    status.value = "Número vinculado"
+                    status.value = context.getString(com.intu.taxi.R.string.number_linked)
                     val uid = auth.currentUser?.uid
                     if (uid != null) {
                         FirebaseFirestore.getInstance().collection("users").document(uid)
@@ -76,7 +76,7 @@ fun VerifyPhoneScreen(phone: String, onFinished: () -> Unit) {
                     onFinished()
                 }
             }
-        }, modifier = Modifier.fillMaxWidth()) { Text("Verificar") }
+        }, modifier = Modifier.fillMaxWidth()) { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.verify_button)) }
         if (status.value.isNotEmpty()) Text(status.value)
     }
 }

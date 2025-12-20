@@ -73,6 +73,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -99,7 +100,8 @@ import com.google.firebase.functions.ktx.functions
 import coil.compose.AsyncImage
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -171,6 +173,7 @@ fun DriverHomeScreen() {
     var verifyingStartCode by remember { mutableStateOf(false) }
     var completingRide by remember { mutableStateOf(false) }
     var submittingRating by remember { mutableStateOf(false) }
+    var isRideCardExpanded by remember { mutableStateOf(true) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
@@ -250,7 +253,7 @@ fun DriverHomeScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "intu",
+                        text = stringResource(com.intu.taxi.R.string.brand_name),
                         color = Color.White,
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
@@ -258,7 +261,7 @@ fun DriverHomeScreen() {
                     )
                     Spacer(modifier = Modifier.height(30.dp))
                     Text(
-                        text = if (firstName.isNotBlank()) "¡Hola $firstName!" else "¡Hola!",
+                        text = if (firstName.isNotBlank()) stringResource(com.intu.taxi.R.string.hello_user, firstName) else stringResource(com.intu.taxi.R.string.hello),
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                         fontSize = 24.sp
@@ -343,9 +346,9 @@ fun DriverHomeScreen() {
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
                         ) {
                             Column(Modifier.padding(12.dp)) {
-                                Text("Solicitudes disponibles", style = MaterialTheme.typography.titleMedium, color = Color(0xFF1C1C1E))
+                                Text(stringResource(com.intu.taxi.R.string.requests_available), style = MaterialTheme.typography.titleMedium, color = Color(0xFF1C1C1E))
                                 Spacer(Modifier.height(8.dp))
-                                Text("Sin solicitudes por ahora", style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                                Text(stringResource(com.intu.taxi.R.string.no_requests_now), style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
                             }
                         }
                     } else {
@@ -389,7 +392,8 @@ fun DriverHomeScreen() {
                     androidx.compose.material3.Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 16.dp)
+                            .clickable { isRideCardExpanded = !isRideCardExpanded },
                         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.98f)),
                         elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 14.dp),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
@@ -418,110 +422,57 @@ fun DriverHomeScreen() {
                                     Box(modifier = Modifier.size(56.dp).background(Color(0xFFE5E7EB), CircleShape)) {}
                                 }
                                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    val nm = clientName ?: "Cliente"
+                                    val nm = clientName ?: stringResource(com.intu.taxi.R.string.client_label)
                                     val rt = currentRideRideType ?: driverVehicleType.ifBlank { "Intu Honda" }
                                     Text(nm, style = MaterialTheme.typography.titleMedium, color = Color(0xFF111827))
                                     Text(rt, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
                                 }
-                                val statusStr = if (isArrived) "Llegado" else "En curso"
-                                InfoChip(text = statusStr, bg = Color(0xFFE6F2FF), fg = Color(0xFF0F172A))
-                            }
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Box(modifier = Modifier.size(10.dp).background(Color(0xFF10B981), CircleShape)) {}
-                                        val oLbl = currentRideOriginLabel ?: "Origen: —"
-                                        Text(oLbl, style = MaterialTheme.typography.bodySmall, color = Color(0xFF111827))
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Box(modifier = Modifier.size(10.dp).background(Color(0xFFEF4444), CircleShape)) {}
-                                        val dLbl = currentRideDestLabel ?: "Destino: —"
-                                        Text(dLbl, style = MaterialTheme.typography.bodySmall, color = Color(0xFF111827))
-                                    }
+                                val statusStr = if (isArrived) stringResource(com.intu.taxi.R.string.status_arrived) else stringResource(com.intu.taxi.R.string.status_in_progress)
+                                Column(horizontalAlignment = Alignment.End) {
+                                    InfoChip(text = statusStr, bg = Color(0xFFE6F2FF), fg = Color(0xFF0F172A))
+                                    Spacer(Modifier.height(4.dp))
+                                    androidx.compose.material3.Icon(
+                                        imageVector = if (isRideCardExpanded) androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown else androidx.compose.material.icons.Icons.Filled.KeyboardArrowUp,
+                                        contentDescription = if (isRideCardExpanded) stringResource(com.intu.taxi.R.string.collapse) else stringResource(com.intu.taxi.R.string.expand),
+                                        tint = Color(0xFF6E6E73)
+                                    )
                                 }
                             }
 
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                val pm = currentRidePaymentMethod ?: "—"
-                                val prStr = currentRidePrice?.let { String.format("$%.2f", it) } ?: "—"
-                                InfoChip(text = "Pago: $pm")
-                                InfoChip(text = "Precio: $prStr")
-                            }
+                            if (isRideCardExpanded) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(10.dp).background(Color(0xFF10B981), CircleShape)) {}
+                                            val oLbl = currentRideOriginLabel ?: stringResource(com.intu.taxi.R.string.origin_placeholder)
+                                            Text(oLbl, style = MaterialTheme.typography.bodySmall, color = Color(0xFF111827))
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(10.dp).background(Color(0xFFEF4444), CircleShape)) {}
+                                            val dLbl = currentRideDestLabel ?: stringResource(com.intu.taxi.R.string.destination_placeholder)
+                                            Text(dLbl, style = MaterialTheme.typography.bodySmall, color = Color(0xFF111827))
+                                        }
+                                    }
+                                }
 
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                androidx.compose.material3.OutlinedButton(onClick = { showChat = true }, modifier = Modifier.weight(1f)) {
-                                    androidx.compose.material3.Text("Chat")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val pm = currentRidePaymentMethod ?: "—"
+                                    val prStr = currentRidePrice?.let { String.format("$%.2f", it) } ?: "—"
+                                    val payLbl = stringResource(com.intu.taxi.R.string.payment_label)
+                                    val prLbl = stringResource(com.intu.taxi.R.string.price_label)
+                                    InfoChip(text = "$payLbl: $pm")
+                                    InfoChip(text = "$prLbl: $prStr")
                                 }
-                                androidx.compose.material3.IconButton(onClick = {}) {
-                                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Phone, contentDescription = null)
-                                }
-                                androidx.compose.material3.IconButton(onClick = {}) {
-                                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Settings, contentDescription = null)
-                                }
-                            }
-                            if (!isInProgress) {
-                                androidx.compose.foundation.layout.Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
-                                ) {
-                                    androidx.compose.material3.Button(
-                                        onClick = {
-                                            val rid = currentRideId
-                                            if (rid != null) {
-                                                if (!isArrived) {
-                                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                                        .getHttpsCallable("driverArrived")
-                                                        .call(mapOf("currentRideId" to rid))
-                                                        .addOnSuccessListener { isArrived = true; com.intu.taxi.ui.debug.DebugLog.log("DriverArrived OK") }
-                                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("DriverArrived error: ${e.message}") }
-                                                }
-                                                showCodeDialog = true
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(44.dp),
-                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                                    ) {
-                                        androidx.compose.material3.Text(text = if (!isArrived) "Llegué al cliente" else "Ingresar código", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    androidx.compose.material3.OutlinedButton(onClick = { showChat = true }, modifier = Modifier.weight(1f)) {
+                                        androidx.compose.material3.Text(stringResource(com.intu.taxi.R.string.chat_button))
                                     }
-                                    androidx.compose.material3.Button(
-                                        onClick = {
-                                            val rid = currentRideId
-                                            if (rid != null) {
-                                                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                                    .getHttpsCallable("cancelRide")
-                                                    .call(mapOf("currentRideId" to rid))
-                                                    .addOnSuccessListener {
-                                                        isCurrentRide = false
-                                                        currentRideId = null
-                                                        isArrived = false
-                                                        isInProgress = false
-                                                        clientLiveLocation = null
-                                                        showCodeDialog = false
-                                                        mapView.mapboxMap.getStyle { style ->
-                                                            try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
-                                                            try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
-                                                            try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
-                                                            try { style.removeStyleSource("client-src") } catch (_: Exception) {}
-                                                        }
-                                                    }
-                                                    .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CancelRide error: ${e.message}") }
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(44.dp),
-                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                                    ) {
-                                        androidx.compose.material3.Text(text = "Cancelar viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    androidx.compose.material3.IconButton(onClick = {}) {
+                                        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Phone, contentDescription = null)
                                     }
                                 }
-                            } else {
-                                if (isInProgress) {
+                                if (!isInProgress) {
                                     androidx.compose.foundation.layout.Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
@@ -529,56 +480,15 @@ fun DriverHomeScreen() {
                                         androidx.compose.material3.Button(
                                             onClick = {
                                                 val rid = currentRideId
-                                                val targetUserIdSnapshot = currentRideUserId
                                                 if (rid != null) {
-                                                    completingRide = true
-                                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                                        .getHttpsCallable("completeRide")
-                                                        .call(mapOf("currentRideId" to rid, "finalPrice" to (currentRidePrice ?: 0.0)))
-                                                        .addOnSuccessListener { res ->
-                                                            com.intu.taxi.ui.debug.DebugLog.log("CompleteRide OK")
-                                                            val fs = FirebaseFirestore.getInstance()
-                                                            val driverUidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-                                                            if (!driverUidNow.isNullOrBlank()) {
-                                                                fs.collection("users").document(driverUidNow!!).collection("services").limit(1).get()
-                                                                    .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: driver services encontrados=" + qs.size()) }
-                                                                    .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo services driver: ${e.message}") }
-                                                            }
-                                                            val dataMap = (res.data as? Map<*, *>)
-                                                            val userIdFromResult = (dataMap?.get("userId") as? String)
-                                                            val uidUser = userIdFromResult ?: targetUserIdSnapshot
-                                                            if (!uidUser.isNullOrBlank()) {
-                                                                fs.collection("users").document(uidUser!!).collection("trips").limit(1).get()
-                                                                    .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: user trips encontrados=" + qs.size()) }
-                                                                    .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo trips user: ${e.message}") }
-                                                                lastCompletedRideId = rid
-                                                                lastCompletedTargetUserId = uidUser
-                                                                com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: abrir dialog rid=${rid} target=${uidUser}")
-                                                                completingRide = false
-                                                                showRatingDialog = true
-                                                            } else {
-                                                                com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: userId vacío, no se puede abrir dialog")
-                                                                completingRide = false
-                                                            }
-                                                            isCurrentRide = false
-                                                            currentRideId = null
-                                                            isArrived = false
-                                                            isInProgress = false
-                                                            clientLiveLocation = null
-                                                            showCodeDialog = false
-                                                            com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: estados reseteados tras complete")
-                                                            mapView.mapboxMap.getStyle { style ->
-                                                                try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
-                                                                try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
-                                                                try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
-                                                                try { style.removeStyleSource("client-src") } catch (_: Exception) {}
-                                                                try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
-                                                                try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
-                                                                try { style.removeStyleLayer("driver-dest-layer") } catch (_: Exception) {}
-                                                                try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
-                                                            }
-                                                        }
-                                                        .addOnFailureListener { e -> completingRide = false; com.intu.taxi.ui.debug.DebugLog.log("CompleteRide error: ${e.message}") }
+                                                    if (!isArrived) {
+                                                        com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                                            .getHttpsCallable("driverArrived")
+                                                            .call(mapOf("currentRideId" to rid))
+                                                            .addOnSuccessListener { isArrived = true; com.intu.taxi.ui.debug.DebugLog.log("DriverArrived OK") }
+                                                            .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("DriverArrived error: ${e.message}") }
+                                                    }
+                                                    showCodeDialog = true
                                                 }
                                             },
                                             modifier = Modifier
@@ -587,11 +497,7 @@ fun DriverHomeScreen() {
                                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                                         ) {
-                                            if (completingRide) {
-                                                androidx.compose.material3.CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
-                                            } else {
-                                                androidx.compose.material3.Text(text = "Completar viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                            }
+                                            androidx.compose.material3.Text(text = if (!isArrived) stringResource(com.intu.taxi.R.string.arrived_at_client) else stringResource(com.intu.taxi.R.string.enter_code), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                         }
                                         androidx.compose.material3.Button(
                                             onClick = {
@@ -612,10 +518,6 @@ fun DriverHomeScreen() {
                                                                 try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
                                                                 try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
                                                                 try { style.removeStyleSource("client-src") } catch (_: Exception) {}
-                                                                try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
-                                                                try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
-                                                                try { style.removeStyleLayer("driver-dest-layer") } catch (_: Exception) {}
-                                                                try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
                                                             }
                                                         }
                                                         .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CancelRide error: ${e.message}") }
@@ -627,40 +529,151 @@ fun DriverHomeScreen() {
                                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
                                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                                         ) {
-                                            androidx.compose.material3.Text(text = "Cancelar viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            androidx.compose.material3.Text(text = stringResource(com.intu.taxi.R.string.cancel_ride), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 } else {
-                                    androidx.compose.material3.Button(
-                                        onClick = {
-                                            val rid = currentRideId
-                                            if (rid != null) {
-                                                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                                    .getHttpsCallable("cancelRide")
-                                                    .call(mapOf("currentRideId" to rid))
-                                                    .addOnSuccessListener {
-                                                        isCurrentRide = false
-                                                        currentRideId = null
-                                                        isArrived = false
-                                                        clientLiveLocation = null
-                                                        showCodeDialog = false
-                                                        mapView.mapboxMap.getStyle { style ->
-                                                            try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
-                                                            try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
-                                                            try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
-                                                            try { style.removeStyleSource("client-src") } catch (_: Exception) {}
-                                                        }
+                                    if (isInProgress) {
+                                        androidx.compose.foundation.layout.Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            androidx.compose.material3.Button(
+                                                onClick = {
+                                                    val rid = currentRideId
+                                                    val targetUserIdSnapshot = currentRideUserId
+                                                    if (rid != null) {
+                                                        completingRide = true
+                                                        com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                                            .getHttpsCallable("completeRide")
+                                                            .call(mapOf("currentRideId" to rid, "finalPrice" to (currentRidePrice ?: 0.0)))
+                                                            .addOnSuccessListener { res ->
+                                                                com.intu.taxi.ui.debug.DebugLog.log("CompleteRide OK")
+                                                                val fs = FirebaseFirestore.getInstance()
+                                                                val driverUidNow = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                                                                if (!driverUidNow.isNullOrBlank()) {
+                                                                    fs.collection("users").document(driverUidNow!!).collection("services").limit(1).get()
+                                                                        .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: driver services encontrados=" + qs.size()) }
+                                                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo services driver: ${e.message}") }
+                                                                }
+                                                                val dataMap = (res.data as? Map<*, *>)
+                                                                val userIdFromResult = (dataMap?.get("userId") as? String)
+                                                                val uidUser = userIdFromResult ?: targetUserIdSnapshot
+                                                                if (!uidUser.isNullOrBlank()) {
+                                                                    fs.collection("users").document(uidUser!!).collection("trips").limit(1).get()
+                                                                        .addOnSuccessListener { qs -> com.intu.taxi.ui.debug.DebugLog.log("FS: user trips encontrados=" + qs.size()) }
+                                                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("FS: error leyendo trips user: ${e.message}") }
+                                                                    lastCompletedRideId = rid
+                                                                    lastCompletedTargetUserId = uidUser
+                                                                    com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: abrir dialog rid=${rid} target=${uidUser}")
+                                                                    completingRide = false
+                                                                    showRatingDialog = true
+                                                                } else {
+                                                                    com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: userId vacío, no se puede abrir dialog")
+                                                                    completingRide = false
+                                                                }
+                                                                isCurrentRide = false
+                                                                currentRideId = null
+                                                                isArrived = false
+                                                                isInProgress = false
+                                                                clientLiveLocation = null
+                                                                showCodeDialog = false
+                                                                com.intu.taxi.ui.debug.DebugLog.log("RATING-DRIVER: estados reseteados tras complete")
+                                                                mapView.mapboxMap.getStyle { style ->
+                                                                    try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
+                                                                    try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("client-src") } catch (_: Exception) {}
+                                                                    try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
+                                                                    try { style.removeStyleLayer("driver-dest-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
+                                                                }
+                                                            }
+                                                            .addOnFailureListener { e -> completingRide = false; com.intu.taxi.ui.debug.DebugLog.log("CompleteRide error: ${e.message}") }
                                                     }
-                                                    .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CancelRide error: ${e.message}") }
+                                                },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(44.dp),
+                                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                                            ) {
+                                                if (completingRide) {
+                                                    androidx.compose.material3.CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+                                                } else {
+                                                    androidx.compose.material3.Text(text = stringResource(com.intu.taxi.R.string.complete_ride), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                                }
                                             }
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(44.dp),
-                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                                    ) {
-                                        androidx.compose.material3.Text(text = "Cancelar viaje", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            androidx.compose.material3.Button(
+                                                onClick = {
+                                                    val rid = currentRideId
+                                                    if (rid != null) {
+                                                        com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                                            .getHttpsCallable("cancelRide")
+                                                            .call(mapOf("currentRideId" to rid))
+                                                            .addOnSuccessListener {
+                                                                isCurrentRide = false
+                                                                currentRideId = null
+                                                                isArrived = false
+                                                                isInProgress = false
+                                                                clientLiveLocation = null
+                                                                showCodeDialog = false
+                                                                mapView.mapboxMap.getStyle { style ->
+                                                                    try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
+                                                                    try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("client-src") } catch (_: Exception) {}
+                                                                    try { style.removeStyleLayer("driver-to-dest-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("driver-to-dest-src") } catch (_: Exception) {}
+                                                                    try { style.removeStyleLayer("driver-dest-layer") } catch (_: Exception) {}
+                                                                    try { style.removeStyleSource("driver-dest-src") } catch (_: Exception) {}
+                                                                }
+                                                            }
+                                                            .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CancelRide error: ${e.message}") }
+                                                    }
+                                                },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(44.dp),
+                                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                                        ) {
+                                            androidx.compose.material3.Text(text = stringResource(com.intu.taxi.R.string.cancel_ride), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        }
+                                        }
+                                    } else {
+                                        androidx.compose.material3.Button(
+                                            onClick = {
+                                                val rid = currentRideId
+                                                if (rid != null) {
+                                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                                        .getHttpsCallable("cancelRide")
+                                                        .call(mapOf("currentRideId" to rid))
+                                                        .addOnSuccessListener {
+                                                            isCurrentRide = false
+                                                            currentRideId = null
+                                                            isArrived = false
+                                                            clientLiveLocation = null
+                                                            showCodeDialog = false
+                                                            mapView.mapboxMap.getStyle { style ->
+                                                                try { style.removeStyleLayer("driver-route-layer") } catch (_: Exception) {}
+                                                                try { style.removeStyleSource("driver-route-src") } catch (_: Exception) {}
+                                                                try { style.removeStyleLayer("client-layer") } catch (_: Exception) {}
+                                                                try { style.removeStyleSource("client-src") } catch (_: Exception) {}
+                                                            }
+                                                        }
+                                                        .addOnFailureListener { e -> com.intu.taxi.ui.debug.DebugLog.log("CancelRide error: ${e.message}") }
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp),
+                                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F), contentColor = Color.White),
+                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                                        ) {
+                                            androidx.compose.material3.Text(text = stringResource(com.intu.taxi.R.string.cancel_ride), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
@@ -668,47 +681,132 @@ fun DriverHomeScreen() {
                     }
                 }
                 if (showCodeDialog) {
-                    androidx.compose.material3.AlertDialog(
-                        onDismissRequest = { showCodeDialog = false },
-                        title = { androidx.compose.material3.Text("Validar código de inicio") },
-                        text = {
-                            androidx.compose.material3.OutlinedTextField(
-                                value = codeInput,
-                                onValueChange = { codeInput = it.filter { ch -> ch.isDigit() }.take(4) },
-                                singleLine = true,
-                                label = { androidx.compose.material3.Text("Código de 4 dígitos") }
-                            )
-                            if (verifyingStartCode) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                androidx.compose.material3.CircularProgressIndicator(color = Color(0xFF0D9488))
-                            }
-                        },
-                        confirmButton = {
-                            androidx.compose.material3.Button(onClick = {
-                                verifyingStartCode = true
-                                val rid = currentRideId
-                                val codeNum = codeInput.toIntOrNull()
-                                if (rid != null && codeNum != null) {
-                                    com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
-                                        .getHttpsCallable("verifyStartCode")
-                                        .call(mapOf("currentRideId" to rid, "code" to codeNum))
-                                        .addOnSuccessListener { showCodeDialog = false; verifyingStartCode = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode OK") }
-                                        .addOnFailureListener { e -> verifyingStartCode = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode error: ${e.message}") }
-                                } else {
-                                    verifyingStartCode = false
+                    androidx.compose.ui.window.Dialog(
+                        onDismissRequest = { showCodeDialog = false }
+                    ) {
+                        androidx.compose.material3.Card(
+                            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFF0D1B2A)),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                            elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(24.dp)
+                                    .fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    androidx.compose.material3.Text(
+                                        text = stringResource(com.intu.taxi.R.string.security_code_title),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    androidx.compose.material3.Text(
+                                        text = stringResource(com.intu.taxi.R.string.security_code_instruction),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
                                 }
-                            }, enabled = !verifyingStartCode) {
+
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = codeInput,
+                                    onValueChange = { codeInput = it.filter { ch -> ch.isDigit() }.take(4) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        color = Color.White,
+                                        letterSpacing = 8.sp
+                                    ),
+                                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                        unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                        focusedIndicatorColor = Color(0xFF4DB6AC),
+                                        unfocusedIndicatorColor = Color.White.copy(alpha = 0.2f),
+                                        cursorColor = Color(0xFF4DB6AC)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp),
+                                    placeholder = {
+                                        androidx.compose.material3.Text(
+                                            "0000",
+                                            style = androidx.compose.ui.text.TextStyle(
+                                                fontSize = 28.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                                letterSpacing = 8.sp
+                                            ),
+                                            color = Color.White.copy(alpha = 0.1f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                )
+
                                 if (verifyingStartCode) {
-                                    androidx.compose.material3.Text("Validando...")
-                                } else {
-                                    androidx.compose.material3.Text("Validar")
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        color = Color(0xFF4DB6AC),
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    androidx.compose.material3.OutlinedButton(
+                                        onClick = { showCodeDialog = false },
+                                        enabled = !verifyingStartCode,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        androidx.compose.material3.Text(stringResource(com.intu.taxi.R.string.cancel))
+                                    }
+                                    
+                                    androidx.compose.material3.Button(
+                                        onClick = {
+                                            verifyingStartCode = true
+                                            val rid = currentRideId
+                                            val codeNum = codeInput.toIntOrNull()
+                                            if (rid != null && codeNum != null) {
+                                                com.google.firebase.ktx.Firebase.functions(context.getString(com.intu.taxi.R.string.functions_region))
+                                                    .getHttpsCallable("verifyStartCode")
+                                                    .call(mapOf("currentRideId" to rid, "code" to codeNum))
+                                                    .addOnSuccessListener { showCodeDialog = false; verifyingStartCode = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode OK") }
+                                                    .addOnFailureListener { e -> verifyingStartCode = false; com.intu.taxi.ui.debug.DebugLog.log("VerifyStartCode error: ${e.message}") }
+                                            } else {
+                                                verifyingStartCode = false
+                                            }
+                                        },
+                                        enabled = !verifyingStartCode && codeInput.length == 4,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF4DB6AC),
+                                            disabledContainerColor = Color(0xFF4DB6AC).copy(alpha = 0.5f),
+                                            contentColor = Color.White,
+                                            disabledContentColor = Color.White.copy(alpha = 0.5f)
+                                        )
+                                    ) {
+                                        androidx.compose.material3.Text(stringResource(com.intu.taxi.R.string.start_ride), fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
-                        },
-                        dismissButton = {
-                            androidx.compose.material3.OutlinedButton(onClick = { showCodeDialog = false }, enabled = !verifyingStartCode) { androidx.compose.material3.Text("Cancelar") }
                         }
-                    )
+                    }
                 }
             }
         }
@@ -731,7 +829,7 @@ fun DriverHomeScreen() {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         CircularProgressIndicator(color = Color(0xFF0D9488))
-                        Text("Cargando viaje en curso...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                        Text(stringResource(com.intu.taxi.R.string.loading_ride), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
                     }
                 }
             }
@@ -779,7 +877,7 @@ fun DriverHomeScreen() {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         CircularProgressIndicator(color = Color(0xFF0D9488))
-                        Text("Enviando reseña...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                        Text(stringResource(com.intu.taxi.R.string.sending_review), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
                     }
                 }
             }
@@ -787,7 +885,7 @@ fun DriverHomeScreen() {
     }
 
     RatingDialog(
-        title = "Calificar pasajero",
+        title = stringResource(com.intu.taxi.R.string.rate_passenger),
         show = showRatingDialog,
         allowComment = false,
         onDismiss = {
@@ -1218,7 +1316,7 @@ private fun AnimatedGradientButton(
                 .clickable { onClick() },
             contentAlignment = Alignment.Center
         ) {
-            Text(text = if (isSearching) "Parar" else "Buscar", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text(text = if (isSearching) stringResource(com.intu.taxi.R.string.stop_search) else stringResource(com.intu.taxi.R.string.search_action), color = Color.White, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -1277,17 +1375,17 @@ private fun RideRequestFancyCard(item: RideRequestItem, onAccept: () -> Unit) {
                     Text(item.rideType, style = MaterialTheme.typography.titleMedium, color = Color(0xFF111827))
                     Spacer(Modifier.height(4.dp))
                     val priceStr = item.price?.let { String.format("$%.2f", it) } ?: "--"
-                    Text("Pago: ${item.paymentMethod} · Precio: ${priceStr}", style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
+                    Text(stringResource(com.intu.taxi.R.string.payment_price_format, item.paymentMethod, priceStr), style = MaterialTheme.typography.bodySmall, color = Color(0xFF6E6E73))
                     Spacer(Modifier.height(4.dp))
-                    Text("Origen: ${item.originCity ?: "?"}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF6E6E73))
-                    Text("Destino: ${item.destCity ?: "?"}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF6E6E73))
+                    Text(stringResource(com.intu.taxi.R.string.origin_format, item.originCity ?: "?"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF6E6E73))
+                    Text(stringResource(com.intu.taxi.R.string.dest_format, item.destCity ?: "?"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF6E6E73))
                 }
                 androidx.compose.material3.Button(
                     onClick = onAccept,
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                 ) {
-                    Text("Aceptar")
+                    Text(stringResource(com.intu.taxi.R.string.accept_button))
                 }
             }
         }

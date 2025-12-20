@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -105,14 +106,14 @@ fun LoginScreen(onLoggedIn: () -> Unit, onPhoneLogin: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                "Bienvenido",
+                stringResource(com.intu.taxi.R.string.welcome_title),
                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
                 color = Color.White
             )
             Text(
-                "Inicia sesión para continuar",
+                stringResource(com.intu.taxi.R.string.login_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
@@ -169,7 +170,7 @@ fun LoginScreen(onLoggedIn: () -> Unit, onPhoneLogin: () -> Unit) {
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Phone, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            Text("Continuar con teléfono")
+                            Text(stringResource(com.intu.taxi.R.string.continue_phone))
                         }
                     }
                 }

@@ -225,7 +225,7 @@ fun CreativeDriverSearchIndicator(
                         ) {
                             Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.size(6.dp))
-                            Text(text = "Cancelar búsqueda", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFE8F8F7), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            Text(text = androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.cancel_search), style = MaterialTheme.typography.bodyMedium, color = Color(0xFFE8F8F7), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         }
                     }
                 }

@@ -60,14 +60,14 @@ fun DebugScreen() {
                             }
                             Spacer(Modifier.size(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Mensajes de debug (" + shown.size + ")", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
-                                Text("Versión " + BuildConfig.APP_VERSION_TAG, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6B7280))
+                                Text(androidx.compose.ui.res.stringResource(R.string.debug_title, shown.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+                                Text(androidx.compose.ui.res.stringResource(R.string.app_version_prefix) + BuildConfig.APP_VERSION_TAG, style = MaterialTheme.typography.bodySmall, color = Color(0xFF6B7280))
                             }
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { DebugLog.messages.clear() }) { Text("Limpiar") }
-                                OutlinedButton(onClick = { filterRatingOnly.value = !filterRatingOnly.value }) { Text(if (filterRatingOnly.value) "Mostrar todo" else "Filtrar rating") }
+                                OutlinedButton(onClick = { DebugLog.messages.clear() }) { Text(androidx.compose.ui.res.stringResource(R.string.clear_button)) }
+                                OutlinedButton(onClick = { filterRatingOnly.value = !filterRatingOnly.value }) { Text(if (filterRatingOnly.value) androidx.compose.ui.res.stringResource(R.string.show_all) else androidx.compose.ui.res.stringResource(R.string.filter_rating)) }
                             }
                             Row(horizontalArrangement = Arrangement.Start) {
                                 Button(onClick = {

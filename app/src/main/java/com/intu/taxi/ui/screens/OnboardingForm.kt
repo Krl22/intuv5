@@ -64,15 +64,15 @@ fun OnboardingForm(onCompleted: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Completa tu perfil")
-        OutlinedTextField(value = firstName.value, onValueChange = { firstName.value = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = lastName.value, onValueChange = { lastName.value = it }, label = { Text("Apellido") }, modifier = Modifier.fillMaxWidth())
+        Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.complete_profile_title))
+        OutlinedTextField(value = firstName.value, onValueChange = { firstName.value = it }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.first_name_label)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = lastName.value, onValueChange = { lastName.value = it }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.last_name_label)) }, modifier = Modifier.fillMaxWidth())
 
         OutlinedTextField(
             value = birthdate.value,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Fecha de nacimiento") },
+            label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.birth_date_label)) },
             modifier = Modifier.fillMaxWidth().clickable { datePickerOpen.value = true },
             trailingIcon = {
                 IconButton(onClick = { datePickerOpen.value = true }) {
@@ -92,17 +92,17 @@ fun OnboardingForm(onCompleted: () -> Unit) {
                             birthdate.value = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
                         }
                         datePickerOpen.value = false
-                    }) { Text("OK") }
+                    }) { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.ok)) }
                 },
                 dismissButton = {
-                    Button(onClick = { datePickerOpen.value = false }) { Text("Cancelar") }
+                    Button(onClick = { datePickerOpen.value = false }) { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.cancel)) }
                 }
             ) {
                 DatePicker(state = dateState)
             }
         }
-
-        OutlinedTextField(value = email.value, onValueChange = { email.value = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
+        
+        OutlinedTextField(value = email.value, onValueChange = { email.value = it }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.email_label)) }, modifier = Modifier.fillMaxWidth())
 
         Row(modifier = Modifier.fillMaxWidth()) {
             ExposedDropdownMenuBox(
@@ -114,7 +114,7 @@ fun OnboardingForm(onCompleted: () -> Unit) {
                     value = countryCode.value,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Código") },
+                    label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.country_code_label)) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = countryExpanded.value) },
                     colors = ExposedDropdownMenuDefaults.textFieldColors(),
                     modifier = Modifier.menuAnchor()
@@ -131,7 +131,7 @@ fun OnboardingForm(onCompleted: () -> Unit) {
             OutlinedTextField(
                 value = number.value,
                 onValueChange = { number.value = it.filter { ch -> ch.isDigit() } },
-                label = { Text("Número") },
+                label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.phone_number_label)) },
                 modifier = Modifier.weight(0.6f).padding(start = 8.dp)
             )
         }

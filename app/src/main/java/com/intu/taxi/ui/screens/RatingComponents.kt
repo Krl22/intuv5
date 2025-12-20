@@ -61,7 +61,7 @@ fun RatingDialog(
                         value = commentState.value,
                         onValueChange = { commentState.value = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Comentario (opcional)") }
+                        label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.comment_optional)) }
                     )
                 }
             }
@@ -71,12 +71,12 @@ fun RatingDialog(
                 onClick = { if (ratingState.value > 0) onSubmit(ratingState.value, if (allowComment) commentState.value.trim().ifEmpty { null } else null) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488), contentColor = Color.White)
             ) {
-                Text("Enviar", style = MaterialTheme.typography.bodySmall)
+                Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.send_button), style = MaterialTheme.typography.bodySmall)
             }
         },
         dismissButton = {
             OutlinedButton(onClick = { onDismiss() }) {
-                Text("Omitir")
+                Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.skip_button))
             }
         }
     )

@@ -31,6 +31,11 @@ import com.intu.taxi.R
 import com.intu.taxi.ui.screens.DriverOnboardingScreen
 import com.intu.taxi.ui.screens.DriverHomeScreen
 import com.intu.taxi.ui.screens.DriverTopUpScreen
+import com.intu.taxi.ui.screens.AddPlaceScreen
+import com.intu.taxi.ui.screens.SavedPlace
+import com.google.firebase.firestore.FieldPath
+import com.google.firebase.firestore.FieldValue
+import com.intu.taxi.ui.debug.DebugLog
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -79,34 +84,37 @@ fun TaxiApp() {
         bottomBar = {
             val backStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = backStackEntry?.destination
-            NavigationBar(containerColor = Color(0xFFF3EEF5)) {
-                BottomNavItem.items.forEach { item ->
-                    val selected = isDestinationInHierarchy(currentDestination, item.route)
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            if (!selected) {
-                                if (item.route == BottomNavItem.Account.route) {
-                                    navController.popBackStack("debug", inclusive = true)
+            val hideBottomBar = currentDestination?.route == "driverTopUp" || currentDestination?.route == "addPlace"
+            if (!hideBottomBar) {
+                NavigationBar(containerColor = Color(0xFFF3EEF5)) {
+                    BottomNavItem.items.forEach { item ->
+                        val selected = isDestinationInHierarchy(currentDestination, item.route)
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                if (!selected) {
+                                    if (item.route == BottomNavItem.Account.route) {
+                                        navController.popBackStack("debug", inclusive = true)
+                                    }
+                                    val targetRoute = if (item.route == BottomNavItem.Home.route && driverActive.value) "driverHome" else item.route
+                                    navController.navigate(targetRoute) {
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
-                                val targetRoute = if (item.route == BottomNavItem.Home.route && driverActive.value) "driverHome" else item.route
-                                navController.navigate(targetRoute) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        icon = { androidx.compose.material3.Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
-                        label = { Text(stringResource(item.labelRes), fontWeight = FontWeight.Medium) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF26A69A),
-                            unselectedIconColor = Color(0xFF4B5563),
-                            selectedTextColor = Color(0xFF111827),
-                            unselectedTextColor = Color(0xFF111827),
-                            indicatorColor = Color.Transparent
+                            },
+                            icon = { androidx.compose.material3.Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
+                            label = { Text(stringResource(item.labelRes), fontWeight = FontWeight.Medium) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF26A69A),
+                                unselectedIconColor = Color(0xFF4B5563),
+                                selectedTextColor = Color(0xFF111827),
+                                unselectedTextColor = Color(0xFF111827),
+                                indicatorColor = Color.Transparent
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -128,7 +136,8 @@ fun TaxiApp() {
                         navController.navigate("verifyPhone?phone=$encoded")
                     },
                     onStartDriver = { navController.navigate("driverOnboarding") },
-                    onStartTopUp = { navController.navigate("driverTopUp") }
+                    onStartTopUp = { navController.navigate("driverTopUp") },
+                    onAddPlaceClick = { navController.navigate("addPlace") }
                 )
             }
             composable("debug") { com.intu.taxi.ui.screens.DebugScreen() }
@@ -144,6 +153,28 @@ fun TaxiApp() {
             }
             composable("driverTopUp") {
                 DriverTopUpScreen(onFinished = { navController.popBackStack() })
+            }
+            composable("addPlace") {
+                AddPlaceScreen(
+                    defaultType = "other",
+                    onPlacePicked = { place ->
+                        val u = FirebaseAuth.getInstance().currentUser?.uid
+                        if (u != null) {
+                            val placeMap = mutableMapOf<String, Any>(
+                                "name" to place.name,
+                                "lat" to place.lat,
+                                "lon" to place.lon
+                            )
+                            if (!place.label.isNullOrBlank()) placeMap["label"] = place.label!!
+                            if (!place.icon.isNullOrBlank()) placeMap["icon"] = place.icon!!
+                            FirebaseFirestore.getInstance().collection("users").document(u)
+                                .update(FieldPath.of("savedPlaces", "places"), FieldValue.arrayUnion(placeMap))
+                            DebugLog.log("TaxiApp: lugar guardado -> ${place.name}")
+                        }
+                        navController.popBackStack()
+                    },
+                    onCancel = { navController.popBackStack() }
+                )
             }
         }
     }

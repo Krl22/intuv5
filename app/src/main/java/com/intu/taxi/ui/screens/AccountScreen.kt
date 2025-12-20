@@ -127,6 +127,7 @@ fun AccountScreen(
     onVerifyPhone: (String) -> Unit = {},
     onStartDriver: () -> Unit = {},
     onStartTopUp: () -> Unit = {},
+    onAddPlaceClick: () -> Unit = {},
     onStartPickPlace: (String) -> Unit = {},
     pendingPickedPlace: SavedPlace? = null
 ) {
@@ -167,25 +168,8 @@ fun AccountScreen(
         }
     }
 
-    var showAddPlace by remember { mutableStateOf(false) }
-    var savedPlaceQueued by remember { mutableStateOf<SavedPlace?>(null) }
-    LaunchedEffect(savedPlaceQueued) {
-        val p = savedPlaceQueued
-        val u = uid
-        if (p != null && u != null) {
-            val placeMap = mutableMapOf<String, Any>(
-                "name" to p.name,
-                "lat" to p.lat,
-                "lon" to p.lon
-            )
-            if (!p.label.isNullOrBlank()) placeMap["label"] = p.label!!
-            if (!p.icon.isNullOrBlank()) placeMap["icon"] = p.icon!!
-            FirebaseFirestore.getInstance().collection("users").document(u)
-                .update(FieldPath.of("savedPlaces", "places"), FieldValue.arrayUnion(placeMap))
-            DebugLog.log("Account: lugar guardado -> ${p.name}")
-            savedPlaceQueued = null
-        }
-    }
+    // var showAddPlace by remember { mutableStateOf(false) } // Moved to Navigation
+    // var savedPlaceQueued by remember { mutableStateOf<SavedPlace?>(null) } // Moved to Navigation
     val name = listOf(
         profile?.get("firstName") as? String ?: "",
         profile?.get("lastName") as? String ?: ""
@@ -258,11 +242,13 @@ fun AccountScreen(
                                 onVerifyPhone(existingPhone)
                             }
                         }.addOnFailureListener { signErr ->
-                            linkStatus = "Error: ${signErr.message}"
+                            val errPfx = context.getString(R.string.error_prefix)
+                            linkStatus = "$errPfx${signErr.message}"
                             com.intu.taxi.ui.debug.DebugLog.log("Google collision sign-in failed: ${signErr.message}")
                         }
                     } else {
-                        linkStatus = "Error: ${e.message}"
+                        val errPfx = context.getString(R.string.error_prefix)
+                        linkStatus = "$errPfx${e.message}"
                         com.intu.taxi.ui.debug.DebugLog.log("Google link error: ${e.message}")
                     }
                 }
@@ -408,10 +394,7 @@ fun AccountScreen(
                         paymentMethod = paymentMethod,
                         onChangePayment = { savePayment(it) },
                         profile = profile,
-                        onAddPlace = {
-                            DebugLog.log("Account: botón Agregar pulsado")
-                            showAddPlace = true
-                        },
+                        onAddPlace = onAddPlaceClick,
                         country = country,
                         onSelectCountry = { saveCountry(it) },
                         onOpenDebug = onDebugClick,
@@ -439,12 +422,16 @@ fun AccountScreen(
             item { AnimatedVisibility(visible = contentVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })) { LogoutCard(onLogout = onLogout) } }
         }
     }
-    if (showAddPlace) {
-        AddPlaceScreen(defaultType = "other") { place ->
-            DebugLog.log("AddPlaceScreen: seleccionado ${place.name}")
-            savedPlaceQueued = place
-            showAddPlace = false
-        }
+    if (false) { // showAddPlace removed
+        // AddPlaceScreen(
+        //     defaultType = "other",
+        //     onPlacePicked = { place ->
+        //         DebugLog.log("AddPlaceScreen: seleccionado ${place.name}")
+        //         savedPlaceQueued = place
+        //         showAddPlace = false
+        //     },
+        //     onCancel = { showAddPlace = false }
+        // )
     }
     // Topups: ahora se procesan en el server via Cloud Functions (processTopup)
 }
@@ -901,8 +888,8 @@ private fun ContactCard(
                                 showDeletePlaceDialog = false
                                 placeToDelete = null
                             },
-                            title = { Text("Eliminar lugar") },
-                            text = { Text("¿Deseas eliminar este lugar guardado?") },
+                            title = { Text(stringResource(R.string.delete_place_title)) },
+                            text = { Text(stringResource(R.string.delete_place_message)) },
                             confirmButton = {
                                 Button(onClick = {
                                     val uid = FirebaseAuth.getInstance().currentUser?.uid
@@ -914,13 +901,13 @@ private fun ContactCard(
                                     }
                                     showDeletePlaceDialog = false
                                     placeToDelete = null
-                                }) { Text("Eliminar") }
+                                }) { Text(stringResource(R.string.delete)) }
                             },
                             dismissButton = {
                                 OutlinedButton(onClick = {
                                     showDeletePlaceDialog = false
                                     placeToDelete = null
-                                }) { Text("Cancelar") }
+                                }) { Text(stringResource(R.string.cancel)) }
                             }
                         )
                     }
@@ -1051,7 +1038,7 @@ private fun ContactCard(
             }
             
             if (linkStatus.isNotEmpty()) Text(linkStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
-            Text("Versión app: " + BuildConfig.APP_VERSION_TAG, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+            Text(stringResource(R.string.app_version_prefix) + BuildConfig.APP_VERSION_TAG, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
         }
     }
 }
@@ -1159,13 +1146,13 @@ private fun SavedPlacesCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.saved_places_label), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onAddPlace) { Text("Agregar") }
+                OutlinedButton(onClick = onAddPlace) { Text(stringResource(R.string.add_button)) }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val sp = profile?.get("savedPlaces") as? Map<String, Any> ?: emptyMap()
             val places = (sp["places"] as? List<*>) ?: emptyList<Any>()
             if (places.isEmpty()) {
-                Text("No hay lugares guardados", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                Text(stringResource(R.string.no_saved_places), style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
             } else {
                 places.forEach { any ->
                     val m = any as? Map<String, Any> ?: emptyMap()
@@ -1294,15 +1281,17 @@ private fun DriverStatsCardLive(uid: String?) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.TrendingUp, contentDescription = null, tint = Color(0xFF0F172A))
                 Spacer(Modifier.size(8.dp))
-                Text("Hoy: S/ " + String.format(java.util.Locale.getDefault(), "%.2f", todayEarnings) + " · " + todayTrips + " servicios", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                val priceStr = String.format(java.util.Locale.getDefault(), "%.2f", todayEarnings)
+                Text(stringResource(R.string.today_earnings_format, priceStr, todayTrips), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
             }
-            LinearProgressIndicator(progress = (todayTrips.coerceAtLeast(1) / 10f).coerceIn(0f, 1f), color = Color(0xFF0D9488))
+            LinearProgressIndicator(progress = { (todayTrips.coerceAtLeast(1) / 10f).coerceIn(0f, 1f) }, color = Color(0xFF0D9488))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.PriceChange, contentDescription = null, tint = Color(0xFF0D9488))
                 Spacer(Modifier.size(8.dp))
-                Text("Semana: S/ " + String.format(java.util.Locale.getDefault(), "%.2f", weekEarnings) + " · " + weekTrips + " servicios", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
+                val priceStr = String.format(java.util.Locale.getDefault(), "%.2f", weekEarnings)
+                Text(stringResource(R.string.week_earnings_format, priceStr, weekTrips), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF111827))
             }
-            LinearProgressIndicator(progress = (weekTrips.coerceAtLeast(1) / 50f).coerceIn(0f, 1f), color = Color(0xFF0F172A))
+            LinearProgressIndicator(progress = { (weekTrips.coerceAtLeast(1) / 50f).coerceIn(0f, 1f) }, color = Color(0xFF0F172A))
         }
     }
 }
@@ -1371,7 +1360,7 @@ private fun DriverRecentServicesCardLive(uid: String?) {
                     Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color.White)
                 }
                 Spacer(Modifier.size(12.dp))
-                Text("Servicios recientes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+                Text(stringResource(R.string.recent_services_label), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
             }
             HorizontalDivider()
             items.forEachIndexed { idx, svc ->
@@ -1379,7 +1368,7 @@ private fun DriverRecentServicesCardLive(uid: String?) {
                 if (idx < items.size - 1) HorizontalDivider()
             }
             if (items.isEmpty()) {
-                ListItem(headlineContent = { Text("Sin servicios completados") })
+                ListItem(headlineContent = { Text(stringResource(R.string.no_completed_services)) })
             }
         }
     }
@@ -1480,7 +1469,7 @@ private fun PhoneLinkSection(uid: String?, existingPhone: String) {
                                 com.intu.taxi.ui.debug.DebugLog.log("Phone link success uid=${uidSafe} full=${full}")
                             }
                         }
-                        override fun onVerificationFailed(e: FirebaseException) { status = "Error: ${e.message ?: "verificación"}"; com.intu.taxi.ui.debug.DebugLog.log("Phone verify error: ${e.message}") }
+                        override fun onVerificationFailed(e: FirebaseException) { status = "${context.getString(R.string.error_prefix)} ${e.message ?: context.getString(R.string.verification_failed)}"; com.intu.taxi.ui.debug.DebugLog.log("Phone verify error: ${e.message}") }
                         override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) { verificationId = vid; status = context.getString(R.string.code_sent); com.intu.taxi.ui.debug.DebugLog.log("SMS code sent to ${full}") }
                     }
                     val options = PhoneAuthOptions.newBuilder(auth)

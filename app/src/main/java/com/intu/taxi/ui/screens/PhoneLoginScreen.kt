@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -118,7 +119,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
             .padding(24.dp)
             .align(Alignment.Center), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                "Iniciar con teléfono",
+                stringResource(com.intu.taxi.R.string.login_phone_title),
                 style = MaterialTheme.typography.headlineSmall,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
@@ -152,7 +153,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                             value = countryCode.value,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Código") },
+                            label = { Text(stringResource(com.intu.taxi.R.string.country_code_label)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = countryExpanded.value) },
                             colors = ExposedDropdownMenuDefaults.textFieldColors(),
                             modifier = Modifier.fillMaxWidth().menuAnchor()
@@ -169,7 +170,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                     OutlinedTextField(
                         value = phone.value,
                         onValueChange = { phone.value = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Teléfono (+NNNN...)") },
+                        label = { Text(stringResource(com.intu.taxi.R.string.phone_hint)) },
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF08817E)) },
                         shape = RoundedCornerShape(16.dp),
@@ -183,7 +184,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                         OutlinedTextField(
                             value = code.value,
                             onValueChange = { code.value = it.filter { ch -> ch.isDigit() } },
-                            label = { Text("Código SMS") },
+                            label = { Text(stringResource(com.intu.taxi.R.string.sms_code_label)) },
                             modifier = Modifier.fillMaxWidth(),
                             leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = Color(0xFF1E1F47)) },
                             shape = RoundedCornerShape(16.dp),
@@ -201,7 +202,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                             val totalDigits = ccDigits.length + phoneDigits.length
                             val phoneInput = "+$ccDigits$phoneDigits"
                             if (phoneDigits.isBlank() || totalDigits < 8 || totalDigits > 15) {
-                                status.value = "Ingresa un teléfono válido en formato +NNNN..."
+                                status.value = context.getString(com.intu.taxi.R.string.status_invalid_phone_format)
                                 return@Button
                             }
                             loading.value = true
@@ -215,7 +216,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                         Log.d("PhoneLogin", "signInWithCredential success")
                                         onLoggedIn()
                                     }.addOnFailureListener {
-                                        status.value = "Error de inicio de sesión"
+                                        status.value = context.getString(com.intu.taxi.R.string.status_login_error)
                                         DebugLog.log("signInWithCredential failure: ${it.message}")
                                         Log.e("PhoneLogin", "signInWithCredential failure", it)
                                     }
@@ -223,25 +224,27 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                 override fun onVerificationFailed(e: FirebaseException) {
                                     loading.value = false
                                     status.value = when (e) {
-                                        is FirebaseAuthInvalidCredentialsException -> "Número inválido"
-                                        is FirebaseTooManyRequestsException -> "Demasiados intentos, intenta más tarde"
+                                        is FirebaseAuthInvalidCredentialsException -> context.getString(com.intu.taxi.R.string.status_invalid_number)
+                                        is FirebaseTooManyRequestsException -> context.getString(com.intu.taxi.R.string.status_too_many_requests)
                                         else -> {
                                             val msg = e.message ?: ""
                                             if (msg.contains("missing a valid app identifier", ignoreCase = true)) {
-                                                "Error: Play Integrity/reCAPTCHA fallaron. En emulador usa números de prueba en Firebase o prueba en dispositivo físico."
+                                                context.getString(com.intu.taxi.R.string.status_integrity_error)
+                                            } else if (msg.contains("internal error", ignoreCase = true)) {
+                                                context.getString(com.intu.taxi.R.string.status_provider_error)
                                             } else {
-                                                "Error: ${e.message}"
+                                                "${context.getString(com.intu.taxi.R.string.error_prefix)}${e.message}"
                                             }
                                         }
                                     }
-                                    DebugLog.log("onVerificationFailed: ${e.message}")
+                                    DebugLog.log("onVerificationFailed: ${e::class.java.simpleName} - ${e.message}")
                                     Log.e("PhoneLogin", "onVerificationFailed", e)
                                 }
                                 override fun onCodeSent(vid: String, token: PhoneAuthProvider.ForceResendingToken) {
                                     loading.value = false
                                     verificationId.value = vid
                                     resendToken.value = token
-                                    status.value = "Código enviado"
+                                    status.value = context.getString(com.intu.taxi.R.string.code_sent_status)
                                     DebugLog.log("onCodeSent")
                                     Log.d("PhoneLogin", "onCodeSent")
                                 }
@@ -249,7 +252,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                             val activity = context as? Activity
                             if (activity == null) {
                                 loading.value = false
-                                status.value = "No se pudo iniciar verificación (contexto)"
+                                status.value = context.getString(com.intu.taxi.R.string.status_context_error)
                                 return@Button
                             }
                             val options = PhoneAuthOptions.newBuilder(auth)
@@ -271,7 +274,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                 }.addOnCompleteListener {
                                     loading.value = false
                                 }.addOnFailureListener {
-                                    status.value = "Código inválido o expirado"
+                                    status.value = context.getString(com.intu.taxi.R.string.status_invalid_code)
                                     DebugLog.log("signInWithCredential failure manual code: ${it.message}")
                                     Log.e("PhoneLogin", "signInWithCredential failure manual code", it)
                                 }
@@ -291,7 +294,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                         enabled = !loading.value) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (verificationId.value == null) Icons.Filled.Phone else Icons.Filled.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            Text(if (verificationId.value == null) "Enviar código" else "Verificar código")
+                            Text(if (verificationId.value == null) stringResource(com.intu.taxi.R.string.send_code_button) else stringResource(com.intu.taxi.R.string.verify_code_button))
                         }
                     }
                     if (verificationId.value != null) {
@@ -312,20 +315,20 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                             FirebaseAuth.getInstance().signInWithCredential(credential).addOnSuccessListener {
                                                 onLoggedIn()
                                             }.addOnFailureListener {
-                                                status.value = "Error de inicio de sesión"
+                                                status.value = context.getString(com.intu.taxi.R.string.status_login_error)
                                             }
                                         }
                                         override fun onVerificationFailed(e: FirebaseException) {
                                             loading.value = false
                                             status.value = when (e) {
-                                                is FirebaseAuthInvalidCredentialsException -> "Número inválido"
-                                                is FirebaseTooManyRequestsException -> "Demasiados intentos, intenta más tarde"
+                                                is FirebaseAuthInvalidCredentialsException -> context.getString(com.intu.taxi.R.string.status_invalid_number)
+                                                is FirebaseTooManyRequestsException -> context.getString(com.intu.taxi.R.string.status_too_many_requests)
                                                 else -> {
                                                     val msg = e.message ?: ""
                                                     if (msg.contains("missing a valid app identifier", ignoreCase = true)) {
-                                                        "Error: Play Integrity/reCAPTCHA fallaron. En emulador usa números de prueba en Firebase o prueba en dispositivo físico."
+                                                        context.getString(com.intu.taxi.R.string.status_integrity_error)
                                                     } else {
-                                                        "Error: ${e.message}"
+                                                        "${context.getString(com.intu.taxi.R.string.error_prefix)}${e.message}"
                                                     }
                                                 }
                                             }
@@ -336,7 +339,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                                             loading.value = false
                                             verificationId.value = vid
                                             resendToken.value = tokenNew
-                                            status.value = "Código reenviado"
+                                            status.value = context.getString(com.intu.taxi.R.string.status_code_resent)
                                             DebugLog.log("onCodeSent (resend)")
                                             Log.d("PhoneLogin", "onCodeSent (resend)")
                                         }
@@ -355,7 +358,7 @@ fun PhoneLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
                             enabled = !loading.value && resendToken.value != null,
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E1F47))
                         ) {
-                            Text("Reenviar código")
+                            Text(stringResource(com.intu.taxi.R.string.resend_code))
                         }
                     }
                 }

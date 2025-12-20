@@ -35,9 +35,6 @@
     <string name="debug">Debug</string>
     <string name="logout">Cerrar sesión</string>
     <string name="payment_method_label">Método de pago</string>
-    <string name="confirm_ride">Confirmar viaje</string>
-    <string name="choose_your_trip">Elige tu viaje</string>
-    <string name="swipe_more_options">Desliza para ver más opciones</string>
     <string name="searching_driver_title">Buscando conductor</string>
     <string name="searching_driver_subtitle">Estamos encontrando un conductor cercano</string>
 
@@ -85,4 +82,195 @@
     <string name="quick_home">Casa</string>
     <string name="quick_work">Trabajo</string>
     <string name="quick_marker">Marcador</string>
+    
+    <!-- Chat -->
+    <string name="chat_title">Chat del viaje</string>
+    <string name="chat_placeholder">Escribe un mensaje...</string>
+    <string name="send">Enviar</string>
+
+    <!-- Driver Home -->
+    <string name="hello_user">¡Hola %s!</string>
+    <string name="hello">¡Hola!</string>
+    <string name="requests_available">Solicitudes disponibles</string>
+    <string name="no_requests_now">Sin solicitudes por ahora</string>
+    <string name="client_label">Cliente</string>
+    <string name="status_arrived">Llegado</string>
+    <string name="status_in_progress">En curso</string>
+    <string name="collapse">Colapsar</string>
+    <string name="expand">Expandir</string>
+    <string name="origin_placeholder">Origen: —</string>
+    <string name="destination_placeholder">Destino: —</string>
+    <string name="chat_button">Chat</string>
+    <string name="arrived_at_client">Llegué al cliente</string>
+    <string name="enter_code">Ingresar código</string>
+    <string name="cancel_ride">Cancelar viaje</string>
+    <string name="complete_ride">Completar viaje</string>
+    <string name="security_code_title">Código de seguridad</string>
+    <string name="security_code_instruction">Pídele al pasajero el código de 4 dígitos</string>
+    <string name="start_ride">Iniciar</string>
+    <string name="loading_ride">Cargando viaje en curso...</string>
+    <string name="completing_ride">Completando viaje...</string>
+    <string name="sending_review">Enviando reseña...</string>
+    <string name="rate_passenger">Calificar pasajero</string>
+    <string name="price_label">Precio</string>
+
+    <string name="email_label">Correo electrónico</string>
+    <string name="verified">Verificado</string>
+    <string name="add_label">Añadir</string>
+    <string name="google_account_label">Cuenta de Google</string>
+    <string name="linked">Vinculado</string>
+    <string name="not_linked">No vinculado</string>
+    <string name="link_action">Vincular</string>
+    <string name="test_label">Test</string>
+    <string name="test_support">Opción para prueba de colapso</string>
+    <string name="see">Ver</string>
+    <string name="test_content">Este es un panel de prueba desplegable.</string>
+    <string name="save">Guardar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="delete">Eliminar</string>
+    <string name="error_prefix">Error: </string>
+    <string name="saved_places_count">%1$d guardados</string>
+    <string name="delete_place_title">Eliminar lugar</string>
+    <string name="delete_place_message">¿Deseas eliminar este lugar guardado?</string>
+    <string name="app_version_prefix">Versión app: </string>
+    
+    <string name="back">Regresar</string>
+    <string name="add_place_title">Agregar lugar</string>
+    <string name="search_address_hint">Buscar dirección</string>
+    <string name="confirm_location">Confirmar ubicación</string>
+    <string name="place_details_title">Detalles del lugar</string>
+    <string name="close">Cerrar</string>
+    <string name="label_hint">Etiqueta (ej. Casa, Trabajo)</string>
+    <string name="select_icon">Selecciona un icono</string>
+
+    <!-- Account Screen -->
+    <string name="add_button">Agregar</string>
+    <string name="recharge_balance">Recargar saldo</string>
+    <string name="recent_services_label">Servicios recientes</string>
+    <string name="no_completed_services">Sin servicios completados</string>
+
+    <!-- Driver Home -->
+    <string name="pay_label">Pago</string>
+    <string name="accept_button">Aceptar</string>
+    <string name="cancel_ride_bold">Cancelar viaje</string>
+    <string name="brand_name">intu</string>
+    <string name="stop_search">Parar</string>
+    <string name="search_action">Buscar</string>
+    <string name="payment_price_format">Pago: %1$s · Precio: %2$s</string>
+    <string name="origin_format">Origen: %1$s</string>
+    <string name="dest_format">Destino: %1$s</string>
+    <string name="code_placeholder">0000</string>
+
+    <!-- Driver TopUp -->
+    <string name="manage_wallet">Gestiona tu billetera</string>
+    <string name="amount_to_recharge">Monto a recargar</string>
+    <string name="upload_proof">Subir captura</string>
+    <string name="payment_proof">Comprobante de pago</string>
+    <string name="amount_hint">Monto (S/)</string>
+    <string name="screenshot_desc">Captura</string>
+    <string name="processing">Procesando...</string>
+    <string name="send_request">ENVIAR SOLICITUD</string>
+    <string name="status_user_not_auth">Usuario no autenticado</string>
+    <string name="status_invalid_amount">Monto inválido</string>
+    <string name="status_upload_screenshot">Sube una captura del pago</string>
+    <string name="status_uploading_proof">Subiendo comprobante...</string>
+    <string name="status_processing_request">Procesando solicitud...</string>
+    <string name="status_request_sent">Solicitud enviada con éxito</string>
+    <string name="status_error_saving">Error al guardar solicitud</string>
+    <string name="status_error_url">Error al obtener URL</string>
+    <string name="status_error_upload">Error al subir captura</string>
+
+    <!-- Home Screen -->
+    <string name="searching_status">Buscando...</string>
+    <string name="powered_by_google">Powered by Google</string>
+    <string name="ride_in_progress_title">Viaje en curso</string>
+    <string name="viewing_driver_loc">Viendo ubicación del conductor</string>
+    <string name="selected_label">Seleccionado</string>
+
+    <!-- Phone Login -->
+    <string name="code_label">Código</string>
+    <string name="phone_hint">Teléfono (+NNNN...)</string>
+    <string name="resend_code">Reenviar código</string>
+    <string name="back_button">Volver</string>
+
+    <!-- Login -->
+    <string name="continue_google">Continuar con Google</string>
+    <string name="continue_phone">Continuar con teléfono</string>
+
+    <!-- Rating -->
+    <string name="comment_optional">Comentario (opcional)</string>
+    <string name="skip_button">Omitir</string>
+
+    <!-- Debug -->
+    <string name="clear_button">Limpiar</string>
+    <string name="test_functions">Probar Functions</string>
+
+    <!-- Creative Indicator -->
+    <string name="scanning_area">Escaneando área</string>
+    <string name="cancel_search">Cancelar búsqueda</string>
+
+    <!-- Driver Onboarding -->
+    <string name="vehicle_type_label">Tipo de vehículo</string>
+    <string name="vehicle_brand_label">Marca del vehículo</string>
+    <string name="vehicle_model_custom">Modelo personalizado</string>
+    <string name="vehicle_model_label">Modelo del vehículo</string>
+    <string name="vehicle_year_label">Año del vehículo</string>
+    <string name="vehicle_plate_label">Placa del vehículo</string>
+    <string name="driver_license_label">Licencia de conducir</string>
+    <string name="become_driver_button">Convertirse en conductor</string>
+
+    <!-- Onboarding Form -->
+    <string name="complete_profile_title">Completa tu perfil</string>
+    <string name="first_name_label">Nombre</string>
+    <string name="last_name_label">Apellido</string>
+    <string name="birth_date_label">Fecha de nacimiento</string>
+
+    <!-- Verify Phone -->
+    <string name="verify_phone_title">Verificación de número</string>
+    <string name="code_sent_to">Se envió un código a %s</string>
+    <string name="where_to">¿A dónde quieres ir?</string>
+    <string name="hello_generic">¡Hola!</string>
+    <string name="confirm">Confirmar</string>
+    <string name="choose_your_trip">Elige tu viaje</string>
+    <string name="swipe_more_options">Desliza para más opciones</string>
+    <string name="confirm_ride">Confirmar viaje</string>
+    <string name="ride_wait_save">Espera y ahorra</string>
+    <string name="ride_package">Envío de paquete</string>
+    <string name="status_waiting_driver">Espera al conductor</string>
+    <string name="send_message">Enviar mensaje</string>
+    <string name="rate_driver_title">Calificar conductor</string>
+    <string name="unit_min">min</string>
+    <string name="code_sent_status">Código enviado</string>
+    <string name="verify_button">Verificar</string>
+    <string name="phone_placeholder_hint">+51...</string>
+    <string name="login_phone_title">Iniciar con teléfono</string>
+    <string name="send_code_button">Enviar código</string>
+    <string name="verify_code_button">Verificar código</string>
+    <string name="status_invalid_phone_format">Ingresa un teléfono válido en formato +NNNN...</string>
+    <string name="status_login_error">Error de inicio de sesión</string>
+    <string name="status_invalid_number">Número inválido</string>
+    <string name="status_too_many_requests">Demasiados intentos, intenta más tarde</string>
+    <string name="status_integrity_error">Error: Play Integrity/reCAPTCHA fallaron. En emulador usa números de prueba en Firebase o prueba en dispositivo físico.</string>
+    <string name="status_provider_error">Error interno del proveedor (39). Revisa: formato +51XXXXXXXXX, sin VPN, hora automática, Google Play Services actualizado y que el operador no bloquee SMS de verificación. Si persiste, intenta otro dispositivo/operador.</string>
+    <string name="status_context_error">No se pudo iniciar verificación (contexto)</string>
+    <string name="status_invalid_code">Código inválido o expirado</string>
+    <string name="status_code_resent">Código reenviado</string>
+    <string name="welcome_title">Bienvenido</string>
+    <string name="login_subtitle">Inicia sesión para continuar</string>
+    <string name="send_button">Enviar</string>
+    <string name="debug_title">Mensajes de debug (%d)</string>
+    <string name="show_all">Mostrar todo</string>
+    <string name="filter_rating">Filtrar rating</string>
+    <string name="driver_onboarding_subtitle">Completa tu información para comenzar a generar ingresos</string>
+    <string name="upload_vehicle_photo">Subir foto del vehículo</string>
+    <string name="photo_selected">Foto seleccionada</string>
+    <string name="error_upload_photo">Error subiendo foto</string>
+    <string name="number_linked">Número vinculado</string>
+
+    <string name="balance_label">Saldo</string>
+    <string name="driver_rating_format">Conductor: %.1f</string>
+    <string name="passenger_rating_format">Pasajero: %.1f</string>
+    <string name="today_earnings_format">Hoy: S/ %1$s · %2$d servicios</string>
+    <string name="week_earnings_format">Semana: S/ %1$s · %2$d servicios</string>
+    <string name="verification_failed">verificación fallida</string>
 </resources>

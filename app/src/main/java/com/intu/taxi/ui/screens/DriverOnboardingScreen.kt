@@ -46,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,6 +61,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun DriverOnboardingScreen(onFinished: () -> Unit) {
     val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+    val context = LocalContext.current
+    val errorPrefix = stringResource(com.intu.taxi.R.string.error_prefix)
 
     val vehicleType = remember { mutableStateOf("") }
     val vehicleBrand = remember { mutableStateOf("") }
@@ -102,12 +106,12 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
         "Otra" to listOf("Otro")
     )
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val ref = FirebaseStorage.getInstance().reference.child("users/$uid/vehicle.jpg")
             ref.putFile(uri).addOnSuccessListener {
                 ref.downloadUrl.addOnSuccessListener { url -> photoUrl.value = url.toString() }
-            }.addOnFailureListener { e -> status.value = "Error subiendo foto: ${e.message}" }
+            }.addOnFailureListener { e -> status.value = "$errorPrefix: ${e.message}" }
         }
     }
 
@@ -162,8 +166,8 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
 
                         AnimatedVisibility(visible = titleVisible.value, enter = fadeIn(tween(800, 150, FastOutSlowInEasing)) + slideInVertically(initialOffsetY = { it / 8 }, animationSpec = tween(800, 150, FastOutSlowInEasing))) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Convertirse en conductor", fontWeight = FontWeight.Bold, color = Color(0xFF1E1F47), textAlign = TextAlign.Center)
-                                Text("Completa tu información para comenzar a generar ingresos", color = Color(0xFF08817E), textAlign = TextAlign.Center)
+                                Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.become_driver_button), fontWeight = FontWeight.Bold, color = Color(0xFF1E1F47), textAlign = TextAlign.Center)
+                                Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.driver_onboarding_subtitle), color = Color(0xFF08817E), textAlign = TextAlign.Center)
                             }
                         }
 
@@ -175,7 +179,7 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
                                         value = vehicleType.value,
                                         onValueChange = {},
                                         readOnly = true,
-                                        label = { Text("Tipo de vehículo") },
+                                        label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.vehicle_type_label)) },
                                         leadingIcon = { Icon(Icons.Filled.DirectionsCar, contentDescription = null, tint = Color(0xFF08817E)) },
                                         trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
                                         colors = TextFieldDefaults.colors(
@@ -197,7 +201,7 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
                                         value = vehicleBrand.value,
                                         onValueChange = {},
                                         readOnly = true,
-                                        label = { Text("Marca del vehículo") },
+                                        label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.vehicle_brand_label)) },
                                         trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
                                         colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)),
                                         modifier = Modifier.menuAnchor().fillMaxWidth(),
@@ -214,10 +218,10 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
                                 if (vehicleBrand.value.isNotBlank()) {
                                     val models = vehicleModelsByBrand[vehicleBrand.value] ?: emptyList()
                                     if (isCustomModel.value) {
-                                        TextField(value = vehicleModel.value, onValueChange = { vehicleModel.value = it }, label = { Text("Modelo personalizado") }, modifier = Modifier.fillMaxWidth(), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)))
+                                        TextField(value = vehicleModel.value, onValueChange = { vehicleModel.value = it }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.vehicle_model_custom)) }, modifier = Modifier.fillMaxWidth(), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)))
                                     } else {
                                         ExposedDropdownMenuBox(expanded = expandedModel.value, onExpandedChange = { expandedModel.value = !expandedModel.value }) {
-                                            TextField(value = vehicleModel.value, onValueChange = {}, readOnly = true, label = { Text("Modelo del vehículo") }, trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }, colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)), modifier = Modifier.menuAnchor().fillMaxWidth())
+                                            TextField(value = vehicleModel.value, onValueChange = {}, readOnly = true, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.vehicle_model_label)) }, trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }, colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)), modifier = Modifier.menuAnchor().fillMaxWidth())
                                             DropdownMenu(expanded = expandedModel.value, onDismissRequest = { expandedModel.value = false }) {
                                                 models.forEach { m -> DropdownMenuItem(text = { Text(m) }, onClick = { vehicleModel.value = if (m == "Otro") "" else m; isCustomModel.value = (m == "Otro"); expandedModel.value = false }) }
                                             }
@@ -227,23 +231,23 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
 
                                 // Año
                                 ExposedDropdownMenuBox(expanded = expandedYear.value, onExpandedChange = { expandedYear.value = !expandedYear.value }) {
-                                    TextField(value = vehicleYear.value, onValueChange = {}, readOnly = true, label = { Text("Año del vehículo") }, trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }, colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)), modifier = Modifier.menuAnchor().fillMaxWidth())
+                                    TextField(value = vehicleYear.value, onValueChange = {}, readOnly = true, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.vehicle_year_label)) }, trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }, colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)), modifier = Modifier.menuAnchor().fillMaxWidth())
                                     DropdownMenu(expanded = expandedYear.value, onDismissRequest = { expandedYear.value = false }, modifier = Modifier.fillMaxWidth(0.9f).heightIn(max = 280.dp)) {
                                         years.forEach { year -> DropdownMenuItem(text = { Text(year) }, onClick = { vehicleYear.value = year; expandedYear.value = false }) }
                                     }
                                 }
 
                                 // Placa y licencia
-                                TextField(value = licensePlate.value, onValueChange = { licensePlate.value = it.uppercase() }, label = { Text("Placa del vehículo") }, modifier = Modifier.fillMaxWidth(), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)))
-                                TextField(value = driverLicense.value, onValueChange = { driverLicense.value = it }, label = { Text("Licencia de conducir") }, modifier = Modifier.fillMaxWidth(), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)))
+                                TextField(value = licensePlate.value, onValueChange = { licensePlate.value = it.uppercase() }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.vehicle_plate_label)) }, modifier = Modifier.fillMaxWidth(), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)))
+                                TextField(value = driverLicense.value, onValueChange = { driverLicense.value = it }, label = { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.driver_license_label)) }, modifier = Modifier.fillMaxWidth(), colors = TextFieldDefaults.colors(focusedIndicatorColor = Color(0xFF08817E), unfocusedIndicatorColor = Color(0xFF08817E).copy(alpha = 0.5f)))
 
-                                OutlinedButton(onClick = { imagePicker.launch("image/*") }) { Text(if (photoUrl.value.isEmpty()) "Subir foto del vehículo" else "Foto seleccionada") }
+                                OutlinedButton(onClick = { imagePicker.launch("image/*") }) { Text(if (photoUrl.value.isEmpty()) androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.upload_vehicle_photo) else androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.photo_selected)) }
                             }
                         }
 
                         AnimatedVisibility(visible = buttonsVisible.value, enter = fadeIn(tween(600, 500, FastOutSlowInEasing)) + slideInVertically(initialOffsetY = { it / 4 }, animationSpec = tween(600, 500, FastOutSlowInEasing))) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(onClick = { onFinished() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1C1C1E).copy(alpha = 0.8f), contentColor = Color.White)) { Text("Cancelar") }
+                                Button(onClick = { onFinished() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1C1C1E).copy(alpha = 0.8f), contentColor = Color.White)) { Text(androidx.compose.ui.res.stringResource(com.intu.taxi.R.string.cancel)) }
                                 val enabled = vehicleType.value.isNotBlank() && vehicleBrand.value.isNotBlank() && vehicleModel.value.isNotBlank() && vehicleYear.value.isNotBlank() && licensePlate.value.isNotBlank() && driverLicense.value.isNotBlank()
                                 Button(onClick = {
                                     val data = mapOf(
@@ -263,8 +267,8 @@ fun DriverOnboardingScreen(onFinished: () -> Unit) {
                                     FirebaseFirestore.getInstance().collection("users").document(uid)
                                         .set(data, SetOptions.merge())
                                         .addOnSuccessListener { onFinished() }
-                                        .addOnFailureListener { e -> status.value = "Error: ${e.message}" }
-                                }, enabled = enabled, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF08817E), contentColor = Color.White)) { Text("Convertirse en conductor") }
+                                        .addOnFailureListener { e -> status.value = "${context.getString(com.intu.taxi.R.string.error_prefix)} ${e.message}" }
+                                }, enabled = enabled, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF08817E), contentColor = Color.White)) { Text(stringResource(com.intu.taxi.R.string.become_driver_button)) }
                             }
                         }
                         if (status.value.isNotEmpty()) Text(status.value, color = Color.White)

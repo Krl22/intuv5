@@ -12,12 +12,17 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.filled.LocalMall
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.LocalCafe
@@ -49,6 +54,7 @@ import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.Style
+import com.mapbox.maps.EdgeInsets
 import com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener
 import com.mapbox.maps.plugin.scalebar.scalebar
 import com.mapbox.maps.plugin.logo.logo
@@ -74,7 +80,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 @Composable
 fun AddPlaceScreen(
     defaultType: String = "other",
-    onPlacePicked: (SavedPlace) -> Unit,
+    onCancel: () -> Unit = {},
+    onPlacePicked: (SavedPlace) -> Unit
 ) {
     val context = LocalContext.current
     val mapView = remember { MapView(context) }
@@ -138,24 +145,73 @@ fun AddPlaceScreen(
         onDispose { reg?.remove() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Professional Gradient Background
+    val bgBrush = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFF0D1B2A), // Dark Navy
+            Color(0xFF1B263B), // Deep Blue Grey
+            Color(0xFF004D40)  // Deep Teal
+        )
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgBrush)
+    ) {
         AndroidView(modifier = Modifier.fillMaxSize(), factory = { mapView })
+
+        // Top Bar Gradient Overlay for readability
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(140.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF0D1B2A).copy(alpha = 0.9f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
 
         AnimatedVisibility(visible = headerVisible, enter = fadeIn() + slideInVertically(initialOffsetY = { -it })) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(top = 20.dp, start = 16.dp, end = 16.dp),
+                    .padding(top = 16.dp, start = 16.dp, end = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = "Agregar lugar", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(12.dp))
+                // Header with Back Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onCancel) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = stringResource(R.string.back),
+                            tint = Color.White
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.add_place_title),
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
                 SearchBar(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     onFocusChange = { focused -> isSearchFocused = focused },
-                    placeholderText = "Buscar dirección",
+                    placeholderText = stringResource(R.string.search_address_hint),
                     showClearButton = true,
                     onClearClick = { searchQuery = ""; suggestions = emptyList() },
                     showMicButton = true,
@@ -169,29 +225,35 @@ fun AddPlaceScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 if (!isPinMode && suggestions.isNotEmpty()) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(4.dp, RoundedCornerShape(12.dp)),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
+                    SolidCard {
                         Column(modifier = Modifier.padding(8.dp)) {
                             suggestions.take(6).forEach { s ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                    .clickable {
-                                        selectedPoint = s.second
-                                        addressName = s.first
-                                        mapView.mapboxMap.setCamera(CameraOptions.Builder().center(s.second).zoom(15.0).build())
-                                        suggestions = emptyList()
-                                    },
+                                        .clickable {
+                                            selectedPoint = s.second
+                                            addressName = s.first
+                                            suggestions = emptyList()
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(text = s.first, color = Color(0xFF111827))
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4DB6AC),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = s.first, 
+                                        color = Color.White.copy(alpha = 0.9f),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                if (s != suggestions.take(6).last()) {
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                                 }
                             }
                         }
@@ -203,12 +265,12 @@ fun AddPlaceScreen(
         if (isPinMode) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(40.dp))
+                    Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(48.dp))
                 }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 24.dp)
+                        .padding(bottom = 32.dp)
                         .align(Alignment.BottomCenter),
                     contentAlignment = Alignment.Center
                 ) {
@@ -221,41 +283,107 @@ fun AddPlaceScreen(
                                 isPinMode = false
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.95f)),
-                        shape = RoundedCornerShape(50)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4DB6AC), // Professional Teal
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(50),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
+                        modifier = Modifier.height(50.dp)
                     ) {
-                        Text("Confirmar", color = Color(0xFF111827))
+                        Text(stringResource(R.string.confirm_location), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
         }
 
         if (selectedPoint != null) {
-            Card(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                shape = RoundedCornerShape(16.dp)
+                    .padding(16.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(text = "Detalles del lugar", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(value = label, onValueChange = { label = it }, label = { Text("Etiqueta (ej. Casa, Trabajo)") }, modifier = Modifier.fillMaxWidth())
-                    IconPickerGrid(selected = iconType, onSelect = { iconType = it })
-                    Button(onClick = {
-                        val p = selectedPoint
-                        if (p != null) {
-                            onPlacePicked(SavedPlace(type = defaultType, name = addressName.ifBlank { label }, lat = p.latitude(), lon = p.longitude(), label = label.ifBlank { null }, icon = iconType))
+                SolidCard {
+                    Column(
+                        modifier = Modifier.padding(20.dp), 
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.place_details_title), 
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            IconButton(onClick = { selectedPoint = null }) {
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close), tint = Color.White.copy(alpha = 0.7f))
+                            }
                         }
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Guardar")
+                        
+                        OutlinedTextField(
+                            value = label, 
+                            onValueChange = { label = it }, 
+                            label = { Text(stringResource(R.string.label_hint), color = Color.White.copy(alpha = 0.7f)) }, 
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF4DB6AC),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                cursorColor = Color(0xFF4DB6AC),
+                                focusedLabelColor = Color(0xFF4DB6AC),
+                                unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        
+                        Text(
+                            text = stringResource(R.string.select_icon),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                        
+                        IconPickerGrid(selected = iconType, onSelect = { iconType = it })
+                        
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(
+                                onClick = { selectedPoint = null },
+                                modifier = Modifier.weight(1f).height(50.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                            ) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                            Button(
+                                onClick = {
+                                    val p = selectedPoint
+                                    if (p != null) {
+                                        onPlacePicked(SavedPlace(type = defaultType, name = addressName.ifBlank { label }, lat = p.latitude(), lon = p.longitude(), label = label.ifBlank { null }, icon = iconType))
+                                    }
+                                }, 
+                                modifier = Modifier.weight(1f).height(50.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF4DB6AC),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Text(stringResource(R.string.save), fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
 
     LaunchedEffect(Unit) {
         mapView.mapboxMap.loadStyleUri(Style.STANDARD) {}
@@ -284,6 +412,17 @@ fun AddPlaceScreen(
         val layerId = "addplace-dest-layer"
         val point = selectedPoint
         if (point != null) {
+            val h = mapView.height.toDouble()
+            val padding = if (h > 0) EdgeInsets(0.0, 0.0, h * 0.5, 0.0) else EdgeInsets(0.0, 0.0, 0.0, 0.0)
+            
+            mapView.mapboxMap.setCamera(
+                CameraOptions.Builder()
+                    .center(point)
+                    .padding(padding)
+                    .zoom(16.5)
+                    .build()
+            )
+
             mapView.mapboxMap.getStyle { style ->
                 try { style.removeStyleLayer(layerId) } catch (_: Exception) {}
                 try { style.removeStyleSource(srcId) } catch (_: Exception) {}
@@ -412,6 +551,26 @@ private fun IconPickerGrid(selected: String, onSelect: (String) -> Unit) {
                 Icon(icon, contentDescription = null)
             }
         }
+    }
+}
+
+
+
+@Composable
+fun SolidCard(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(12.dp, RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF0D1B2A)) // Solid Dark Navy
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(16.dp)
+            )
+    ) {
+        content()
     }
 }
 

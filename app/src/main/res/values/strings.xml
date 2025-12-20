@@ -54,11 +54,8 @@
     <string name="support_privacy_desc">Help center and privacy</string>
     <string name="delete">Eliminar</string>
     <string name="payment_method_label">Payment method</string>
-    <string name="confirm_ride">Confirmar viaje</string>
-    <string name="choose_your_trip">Elige tu viaje</string>
-    <string name="swipe_more_options">Desliza para ver más opciones</string>
-    <string name="searching_driver_title">Buscando conductor</string>
-    <string name="searching_driver_subtitle">Estamos encontrando un conductor cercano</string>
+    <string name="searching_driver_title">Searching for driver</string>
+    <string name="searching_driver_subtitle">We are finding a driver nearby</string>
 
     <string name="vehicle_data_label">Vehicle details</string>
     <string name="year_label_prefix">Year </string>
@@ -108,4 +105,181 @@
     <string name="profile_photo_required_title">Add profile photo</string>
     <string name="profile_photo_required_message">You need a profile photo before becoming a driver.</string>
     <string name="ok">OK</string>
+
+    <!-- Chat -->
+    <string name="chat_title">Ride Chat</string>
+    <string name="chat_placeholder">Type a message...</string>
+    <string name="send">Send</string>
+
+    <!-- Driver Home -->
+    <string name="hello_user">Hello %s!</string>
+    <string name="hello">Hello!</string>
+    <string name="requests_available">Available requests</string>
+    <string name="no_requests_now">No requests for now</string>
+    <string name="client_label">Client</string>
+    <string name="status_arrived">Arrived</string>
+    <string name="status_in_progress">In progress</string>
+    <string name="collapse">Collapse</string>
+    <string name="expand">Expand</string>
+    <string name="origin_placeholder">Origin: —</string>
+    <string name="destination_placeholder">Destination: —</string>
+    <string name="chat_button">Chat</string>
+    <string name="arrived_at_client">Arrived at client</string>
+    <string name="enter_code">Enter code</string>
+    <string name="cancel_ride">Cancel ride</string>
+    <string name="complete_ride">Complete ride</string>
+    <string name="security_code_title">Security Code</string>
+    <string name="security_code_instruction">Ask the passenger for the 4-digit code</string>
+    <string name="start_ride">Start</string>
+    <string name="loading_ride">Loading current ride...</string>
+    <string name="completing_ride">Completing ride...</string>
+    <string name="sending_review">Sending review...</string>
+    <string name="rate_passenger">Rate passenger</string>
+    <string name="price_label">Price</string>
+    
+    <string name="error_prefix">Error: </string>
+    <string name="saved_places_count">%1$d saved</string>
+    <string name="delete_place_title">Delete place</string>
+    <string name="delete_place_message">Do you want to delete this saved place?</string>
+    <string name="app_version_prefix">App version: </string>
+
+    <string name="back">Back</string>
+    <string name="add_place_title">Add place</string>
+    <string name="search_address_hint">Search address</string>
+    <string name="confirm_location">Confirm location</string>
+    <string name="place_details_title">Place details</string>
+    <string name="close">Close</string>
+    <string name="label_hint">Label (e.g. Home, Work)</string>
+    <string name="select_icon">Select an icon</string>
+
+    <!-- Account Screen -->
+    <string name="add_button">Add</string>
+    <string name="recharge_balance">Top up balance</string>
+    <string name="recent_services_label">Recent services</string>
+    <string name="no_completed_services">No completed services</string>
+
+    <!-- Driver Home -->
+    <string name="pay_label">Payment</string>
+    <string name="accept_button">Accept</string>
+    <string name="cancel_ride_bold">Cancel ride</string>
+    <string name="brand_name">intu</string>
+    <string name="stop_search">Stop</string>
+    <string name="search_action">Search</string>
+    <string name="payment_price_format">Payment: %1$s · Price: %2$s</string>
+    <string name="origin_format">Origin: %1$s</string>
+    <string name="dest_format">Destination: %1$s</string>
+    <string name="code_placeholder">0000</string>
+
+    <!-- Driver TopUp -->
+    <string name="manage_wallet">Manage your wallet</string>
+    <string name="amount_to_recharge">Amount to top up</string>
+    <string name="upload_proof">Upload proof</string>
+    <string name="payment_proof">Payment proof</string>
+    <string name="amount_hint">Amount (S/)</string>
+    <string name="screenshot_desc">Screenshot</string>
+    <string name="processing">Processing...</string>
+    <string name="send_request">SEND REQUEST</string>
+    <string name="status_user_not_auth">User not authenticated</string>
+    <string name="status_invalid_amount">Invalid amount</string>
+    <string name="status_upload_screenshot">Upload a payment screenshot</string>
+    <string name="status_uploading_proof">Uploading proof...</string>
+    <string name="status_processing_request">Processing request...</string>
+    <string name="status_request_sent">Request sent successfully</string>
+    <string name="status_error_saving">Error saving request</string>
+    <string name="status_error_url">Error getting URL</string>
+    <string name="status_error_upload">Error uploading proof</string>
+
+    <!-- Home Screen -->
+    <string name="searching_status">Searching...</string>
+    <string name="powered_by_google">Powered by Google</string>
+    <string name="ride_in_progress_title">Ride in progress</string>
+    <string name="viewing_driver_loc">Viewing driver location</string>
+    <string name="selected_label">Selected</string>
+
+    <!-- Phone Login -->
+    <string name="code_label">Code</string>
+    <string name="phone_hint">Phone (+NNNN...)</string>
+    <string name="resend_code">Resend code</string>
+    <string name="back_button">Back</string>
+
+    <!-- Login -->
+    <string name="continue_google">Continue with Google</string>
+    <string name="continue_phone">Continue with phone</string>
+
+    <!-- Rating -->
+    <string name="comment_optional">Comment (optional)</string>
+    <string name="skip_button">Skip</string>
+
+    <!-- Debug -->
+    <string name="clear_button">Clear</string>
+    <string name="test_functions">Test Functions</string>
+
+    <!-- Creative Indicator -->
+    <string name="scanning_area">Scanning area</string>
+    <string name="cancel_search">Cancel search</string>
+
+    <!-- Driver Onboarding -->
+    <string name="vehicle_type_label">Vehicle type</string>
+    <string name="vehicle_brand_label">Vehicle brand</string>
+    <string name="vehicle_model_custom">Custom model</string>
+    <string name="vehicle_model_label">Vehicle model</string>
+    <string name="vehicle_year_label">Vehicle year</string>
+    <string name="vehicle_plate_label">License plate</string>
+    <string name="driver_license_label">Driver license</string>
+    <string name="become_driver_button">Become a driver</string>
+
+    <!-- Onboarding Form -->
+    <string name="complete_profile_title">Complete your profile</string>
+    <string name="first_name_label">First name</string>
+    <string name="last_name_label">Last name</string>
+    <string name="birth_date_label">Date of birth</string>
+
+    <!-- Verify Phone -->
+    <string name="verify_phone_title">Phone verification</string>
+    <string name="code_sent_to">Code sent to %s</string>
+    <string name="where_to">Where to?</string>
+    <string name="hello_generic">Hello!</string>
+    <string name="confirm">Confirm</string>
+    <string name="choose_your_trip">Choose your trip</string>
+    <string name="swipe_more_options">Swipe for more options</string>
+    <string name="confirm_ride">Confirm ride</string>
+    <string name="ride_wait_save">Wait &amp; Save</string>
+    <string name="ride_package">Package Delivery</string>
+    <string name="status_waiting_driver">Waiting for driver</string>
+    <string name="send_message">Send message</string>
+    <string name="rate_driver_title">Rate driver</string>
+    <string name="unit_min">min</string>
+    <string name="code_sent_status">Code sent</string>
+    <string name="verify_button">Verify</string>
+    <string name="phone_placeholder_hint">+51...</string>
+    <string name="login_phone_title">Login with phone</string>
+    <string name="send_code_button">Send code</string>
+    <string name="verify_code_button">Verify code</string>
+    <string name="status_invalid_phone_format">Enter a valid phone number in format +NNNN...</string>
+    <string name="status_login_error">Login error</string>
+    <string name="status_invalid_number">Invalid number</string>
+    <string name="status_too_many_requests">Too many attempts, try again later</string>
+    <string name="status_integrity_error">Error: Play Integrity/reCAPTCHA failed. Use test numbers in emulator or try physical device.</string>
+    <string name="status_provider_error">Provider internal error (39). Check: format +51XXXXXXXXX, no VPN, auto time, updated Google Play Services. Try another device/operator.</string>
+    <string name="status_context_error">Could not start verification (context)</string>
+    <string name="status_invalid_code">Invalid or expired code</string>
+    <string name="status_code_resent">Code resent</string>
+    <string name="welcome_title">Welcome</string>
+    <string name="login_subtitle">Sign in to continue</string>
+    <string name="send_button">Send</string>
+    <string name="debug_title">Debug messages (%d)</string>
+    <string name="show_all">Show all</string>
+    <string name="filter_rating">Filter rating</string>
+    <string name="driver_onboarding_subtitle">Complete your information to start earning</string>
+    <string name="upload_vehicle_photo">Upload vehicle photo</string>
+    <string name="photo_selected">Photo selected</string>
+    <string name="error_upload_photo">Error uploading photo</string>
+    <string name="number_linked">Number linked</string>
+
+    <string name="balance_label">Balance</string>
+    <string name="driver_rating_format">Driver: %.1f</string>
+    <string name="passenger_rating_format">Passenger: %.1f</string>
+    <string name="today_earnings_format">Today: S/ %1$s · %2$d services</string>
+    <string name="week_earnings_format">Week: S/ %1$s · %2$d services</string>
+    <string name="verification_failed">verification failed</string>
 </resources>
