@@ -882,6 +882,16 @@ fun DriverHomeScreen() {
                 }
             }
         }
+        if (lastDriverLocation == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFF0D9488))
+            }
+        }
     }
 
     RatingDialog(

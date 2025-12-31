@@ -1583,6 +1583,18 @@ fun HomeScreen() {
             RideChatSheet(rideId = rid, meUid = me, onClose = { showChat = false })
         }
     }
+
+    if (lastUserLocation == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White)
+                .zIndex(99f),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color(0xFF0D9488))
+        }
+    }
 }
 
 @Composable
