@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -67,7 +69,9 @@ import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
+import android.content.Intent
 import com.intu.taxi.ui.debug.DebugLog
 import com.intu.taxi.ui.theme.Indigo40
 import com.intu.taxi.ui.theme.Teal40
@@ -77,10 +81,14 @@ import com.intu.taxi.ui.theme.Teal40
 fun DriverTopUpScreen(onFinished: () -> Unit, onCancel: () -> Unit = onFinished) {
     val uid = FirebaseAuth.getInstance().currentUser?.uid
     var amount by remember { mutableStateOf("") }
-    var method by remember { mutableStateOf("yape") }
+    var method by remember { mutableStateOf("paypal") }
     var screenshotUri by remember { mutableStateOf<Uri?>(null) }
     var status by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+
+    // PayPal State
+    var paypalOrderId by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         screenshotUri = uri
@@ -196,89 +204,102 @@ fun DriverTopUpScreen(onFinished: () -> Unit, onCancel: () -> Unit = onFinished)
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         PaymentMethodCard(
+                            name = "PayPal",
+                            isSelected = method == "paypal",
+                            activeColor = Color(0xFF003087), // PayPal Blue
+                            icon = Icons.Default.Payment,
+                            onClick = { method = "paypal" },
+                            modifier = Modifier.weight(1f),
+                            enabled = true
+                        )
+                        PaymentMethodCard(
                             name = "Yape",
                             isSelected = method == "yape",
                             activeColor = Color(0xFFAB47BC), // Refined Purple
                             icon = Icons.Default.CreditCard,
-                            onClick = { method = "yape" },
-                            modifier = Modifier.weight(1f)
+                            onClick = { },
+                            modifier = Modifier.weight(1f),
+                            enabled = false
                         )
                         PaymentMethodCard(
                             name = "Plin",
                             isSelected = method == "plin",
                             activeColor = Color(0xFF26C6DA), // Refined Cyan/Teal
                             icon = Icons.Default.CreditCard,
-                            onClick = { method = "plin" },
-                            modifier = Modifier.weight(1f)
+                            onClick = { },
+                            modifier = Modifier.weight(1f),
+                            enabled = false
                         )
                     }
                 }
 
                 // Screenshot Section
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        text = stringResource(com.intu.taxi.R.string.payment_proof),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
-                    
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .border(
-                                width = 1.dp,
-                                color = Color.White.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable { picker.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (screenshotUri != null) {
-                            AsyncImage(
-                                model = screenshotUri,
-                                contentDescription = stringResource(com.intu.taxi.R.string.screenshot_desc),
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.4f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                if (method != "paypal") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text(
+                            text = stringResource(com.intu.taxi.R.string.payment_proof),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .border(
+                                    width = 1.dp,
+                                    color = Color.White.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .clickable { picker.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (screenshotUri != null) {
+                                AsyncImage(
+                                    model = screenshotUri,
+                                    contentDescription = stringResource(com.intu.taxi.R.string.screenshot_desc),
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.4f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AddPhotoAlternate,
+                                            contentDescription = stringResource(com.intu.taxi.R.string.change_photo),
+                                            tint = Color.White
+                                        )
+                                        Text(stringResource(com.intu.taxi.R.string.change_photo), color = Color.White)
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.AddPhotoAlternate,
-                                        contentDescription = stringResource(com.intu.taxi.R.string.change_photo),
-                                        tint = Color.White
+                                        imageVector = Icons.Default.CloudUpload,
+                                        contentDescription = stringResource(com.intu.taxi.R.string.upload_proof),
+                                        modifier = Modifier.size(40.dp),
+                                        tint = Color(0xFF4DB6AC)
                                     )
-                                    Text(stringResource(com.intu.taxi.R.string.change_photo), color = Color.White)
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = stringResource(com.intu.taxi.R.string.upload_proof),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = Color.White.copy(alpha = 0.9f)
+                                    )
                                 }
-                            }
-                        } else {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudUpload,
-                                    contentDescription = stringResource(com.intu.taxi.R.string.upload_proof),
-                                    modifier = Modifier.size(40.dp),
-                                    tint = Color(0xFF4DB6AC)
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = stringResource(com.intu.taxi.R.string.upload_proof),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.White.copy(alpha = 0.9f)
-                                )
                             }
                         }
                     }
@@ -342,6 +363,65 @@ fun DriverTopUpScreen(onFinished: () -> Unit, onCancel: () -> Unit = onFinished)
                             DebugLog.log("topup amount invalid='$amount'")
                             return@Button
                         }
+
+                        if (method == "paypal") {
+                            val functions = FirebaseFunctions.getInstance("us-central1")
+                            if (paypalOrderId == null) {
+                                // Create Order
+                                isLoading = true
+                                status = "Creando orden PayPal..."
+                                val data = hashMapOf("amount" to amt)
+                                functions.getHttpsCallable("createPayPalOrder").call(data)
+                                    .addOnSuccessListener { result ->
+                                        val res = result.data as? Map<String, Any>
+                                        DebugLog.log("createPayPalOrder raw result: ${result.data}")
+                                        val url = res?.get("approveUrl") as? String
+                                        val oid = res?.get("orderId") as? String
+                                        
+                                        if (url != null && oid != null) {
+                                            paypalOrderId = oid
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            context.startActivity(intent)
+                                            status = "Completa el pago en el navegador"
+                                        } else {
+                                            status = "Error al obtener link"
+                                        }
+                                        isLoading = false
+                                    }
+                                    .addOnFailureListener { e ->
+                                        val errMsg = "Error al crear orden: ${e.message}"
+                                        status = errMsg
+                                        DebugLog.log(errMsg)
+                                        isLoading = false
+                                    }
+                            } else {
+                                // Capture Order
+                                isLoading = true
+                                status = "Verificando pago..."
+                                val data = hashMapOf("orderId" to paypalOrderId)
+                                functions.getHttpsCallable("capturePayPalOrder").call(data)
+                                    .addOnSuccessListener { result ->
+                                        val res = result.data as? Map<String, Any>
+                                        val ok = res?.get("ok") as? Boolean ?: false
+                                        if (ok) {
+                                            status = "Pago exitoso!"
+                                            onFinished()
+                                        } else {
+                                            val msg = res?.get("message") as? String ?: "Pago no completado"
+                                            status = msg
+                                        }
+                                        isLoading = false
+                                    }
+                                    .addOnFailureListener { e ->
+                                        val errMsg = "Error al capturar orden: ${e.message}"
+                                        status = errMsg
+                                        DebugLog.log(errMsg)
+                                        isLoading = false
+                                    }
+                            }
+                            return@Button
+                        }
+
                         val uri = screenshotUri
                         if (uri == null) {
                             status = "Sube una captura del pago"
@@ -398,7 +478,7 @@ fun DriverTopUpScreen(onFinished: () -> Unit, onCancel: () -> Unit = onFinished)
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    enabled = !isLoading && amount.isNotEmpty() && screenshotUri != null,
+                    enabled = !isLoading && amount.isNotEmpty() && (method == "paypal" || screenshotUri != null),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF4DB6AC), // Professional Teal
@@ -420,7 +500,11 @@ fun DriverTopUpScreen(onFinished: () -> Unit, onCancel: () -> Unit = onFinished)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(stringResource(com.intu.taxi.R.string.processing), fontWeight = FontWeight.Medium)
                     } else {
-                        Text(stringResource(com.intu.taxi.R.string.send_request), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, letterSpacing = 0.5.sp)
+                        if (method == "paypal" && paypalOrderId != null) {
+                            Text("Verificar Pago", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, letterSpacing = 0.5.sp)
+                        } else {
+                            Text(stringResource(com.intu.taxi.R.string.send_request), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, letterSpacing = 0.5.sp)
+                        }
                     }
                 }
                 
@@ -469,10 +553,12 @@ fun PaymentMethodCard(
     activeColor: Color,
     icon: ImageVector,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
-    val borderColor = if (isSelected) activeColor else Color.White.copy(alpha = 0.1f)
-    val backgroundColor = if (isSelected) activeColor.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)
+    val borderColor = if (!enabled) Color.White.copy(alpha = 0.05f) else if (isSelected) activeColor else Color.White.copy(alpha = 0.1f)
+    val backgroundColor = if (!enabled) Color.White.copy(alpha = 0.02f) else if (isSelected) activeColor.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)
+    val contentColor = if (!enabled) Color.White.copy(alpha = 0.3f) else if (isSelected) Color.White else Color.White.copy(alpha = 0.7f)
 
     Box(
         modifier = modifier
@@ -480,7 +566,7 @@ fun PaymentMethodCard(
             .clip(RoundedCornerShape(12.dp))
             .background(backgroundColor)
             .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(12.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -499,9 +585,10 @@ fun PaymentMethodCard(
             }
             Text(
                 text = name,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.7f)
+                color = contentColor,
+                maxLines = 1
             )
         }
     }

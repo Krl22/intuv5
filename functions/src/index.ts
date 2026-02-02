@@ -7,15 +7,253 @@ import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getDatabase } from "firebase-admin/database";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import * as paypal from "@paypal/checkout-server-sdk";
 
 initializeApp();
+
+// Helper to get PayPal Client
+const getPayPalClient = () => {
+  // Check for environment mode
+  const mode = process.env.PAYPAL_MODE || "sandbox";
+
+  let clientId = "";
+  let clientSecret = "";
+
+  if (mode === "live") {
+    clientId =
+      process.env.PAYPAL_LIVE_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || "";
+    clientSecret =
+      process.env.PAYPAL_LIVE_CLIENT_SECRET ||
+      process.env.PAYPAL_CLIENT_SECRET ||
+      "";
+  } else {
+    clientId =
+      process.env.PAYPAL_SANDBOX_CLIENT_ID ||
+      process.env.PAYPAL_CLIENT_ID ||
+      "YOUR_SANDBOX_CLIENT_ID";
+    clientSecret =
+      process.env.PAYPAL_SANDBOX_CLIENT_SECRET ||
+      process.env.PAYPAL_CLIENT_SECRET ||
+      "YOUR_SANDBOX_CLIENT_SECRET";
+  }
+
+  if (
+    !clientId ||
+    clientId.includes("YOUR_SANDBOX_CLIENT_ID") ||
+    !clientSecret ||
+    clientSecret.includes("YOUR_SANDBOX_CLIENT_SECRET")
+  ) {
+    throw new Error(
+      `Credenciales de PayPal no configuradas para modo ${mode}. Verifica tu archivo .env`,
+    );
+  }
+
+  let environment;
+  if (mode === "live") {
+    environment = new paypal.core.LiveEnvironment(clientId, clientSecret);
+  } else {
+    environment = new paypal.core.SandboxEnvironment(clientId, clientSecret);
+  }
+
+  return new paypal.core.PayPalHttpClient(environment);
+};
+
+export const createPayPalOrder = onCall(
+  { region: "us-central1" },
+  async (request: CallableRequest) => {
+    const uid = request.auth?.uid;
+    const { amount } = request.data as { amount?: number };
+
+    if (!uid) throw new HttpsError("unauthenticated", "Auth requerida");
+    if (!amount || amount <= 0)
+      throw new HttpsError("invalid-argument", "Monto inválido");
+
+    const client = getPayPalClient();
+    const mode = process.env.PAYPAL_MODE || "live";
+    console.log("createPayPalOrder:start", {
+      uid,
+      amount,
+      mode,
+      clientIdSet: !!process.env.PAYPAL_CLIENT_ID,
+    });
+
+    const requestPaypal = new paypal.orders.OrdersCreateRequest();
+    requestPaypal.prefer("return=representation");
+
+    // Tasa de cambio fija (PEN -> USD)
+    // TODO: Obtener esto dinámicamente o de una config
+    const EXCHANGE_RATE = 3.75;
+    const amountUSD = amount / EXCHANGE_RATE;
+
+    requestPaypal.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          amount: {
+            currency_code: "USD", // PayPal requiere monedas soportadas internacionalmente
+            value: amountUSD.toFixed(2),
+          },
+          reference_id: uid,
+          custom_id: amount.toString(), // Guardamos el monto original en Soles
+          description: `Recarga de saldo: S/ ${amount.toFixed(2)}`,
+        },
+      ],
+      application_context: {
+        return_url: "intuapp://paypal/return",
+        cancel_url: "intuapp://paypal/cancel",
+      },
+    });
+
+    try {
+      const response = await client.execute(requestPaypal);
+      const orderId = response.result.id;
+      const approveLink = response.result.links.find(
+        (link: any) => link.rel === "approve",
+      );
+
+      if (!approveLink) {
+        throw new HttpsError("internal", "No se obtuvo link de aprobación");
+      }
+
+      return {
+        ok: true,
+        orderId: orderId,
+        approveUrl: approveLink.href,
+      };
+    } catch (err: any) {
+      console.error(
+        "PayPal Create Error Full:",
+        JSON.stringify(err, Object.getOwnPropertyNames(err)),
+      );
+
+      let errorMsg = err.message || "Error desconocido";
+
+      // Intentar extraer mensaje detallado si es JSON (común en PayPal SDK)
+      try {
+        if (typeof err.message === "string") {
+          const parsed = JSON.parse(err.message);
+
+          if (
+            parsed.details &&
+            Array.isArray(parsed.details) &&
+            parsed.details.length > 0
+          ) {
+            // Extraer detalles específicos del error (ej. campo inválido, moneda no soportada)
+            const d = parsed.details[0];
+            errorMsg = `${d.issue}: ${d.description}`;
+            if (d.field) errorMsg += ` (${d.field})`;
+          } else if (parsed.error_description) {
+            errorMsg = parsed.error_description;
+          } else if (parsed.message) {
+            errorMsg = parsed.message;
+          }
+        }
+      } catch (e) {
+        // No es JSON, usar mensaje original
+      }
+
+      if (errorMsg.includes("Credenciales de PayPal")) {
+        throw new HttpsError("failed-precondition", errorMsg);
+      }
+
+      // Devolver el mensaje técnico al cliente para depuración
+      throw new HttpsError("internal", `PayPal Error: ${errorMsg}`, err);
+    }
+  },
+);
+
+export const capturePayPalOrder = onCall(
+  { region: "us-central1" },
+  async (request: CallableRequest) => {
+    const uid = request.auth?.uid;
+    const { orderId } = request.data as { orderId?: string };
+
+    if (!uid) throw new HttpsError("unauthenticated", "Auth requerida");
+    if (!orderId) throw new HttpsError("invalid-argument", "OrderId requerido");
+
+    const client = getPayPalClient();
+    const requestPaypal = new paypal.orders.OrdersCaptureRequest(orderId);
+    requestPaypal.requestBody({
+      payment_source: {
+        token: {
+          id: orderId,
+          type: "BILLING_AGREEMENT",
+        },
+      },
+    } as any);
+
+    try {
+      const response = await client.execute(requestPaypal);
+      const result = response.result;
+
+      if (result.status === "COMPLETED") {
+        const purchaseUnit = result.purchase_units[0];
+        const capture = purchaseUnit.payments.captures[0];
+        const amountPaidUSD = parseFloat(capture.amount.value);
+
+        // Recuperar el monto original en Soles desde custom_id
+        let amountCredited = amountPaidUSD * 3.75; // Fallback por defecto
+
+        if (purchaseUnit.custom_id) {
+          const originalAmount = parseFloat(purchaseUnit.custom_id);
+          if (!isNaN(originalAmount) && originalAmount > 0) {
+            amountCredited = originalAmount;
+          }
+        }
+
+        // Update user balance in Firestore
+        const fs = getFirestore();
+        const userRef = fs.collection("users").doc(uid);
+
+        await fs.runTransaction(async (tx) => {
+          const userDoc = await tx.get(userRef);
+          if (!userDoc.exists) throw new Error("Usuario no encontrado");
+
+          // Log the transaction
+          const topupRef = fs.collection("topups").doc(); // Auto-ID
+          tx.set(topupRef, {
+            userId: uid,
+            amount: amountCredited,
+            currency: "PEN",
+            paidAmountUSD: amountPaidUSD,
+            method: "paypal",
+            orderId: orderId,
+            status: "completed",
+            processed: true,
+            createdAt: FieldValue.serverTimestamp(),
+            approvedAt: FieldValue.serverTimestamp(),
+          });
+
+          // Increment balance
+          tx.update(userRef, {
+            balance: FieldValue.increment(amountCredited),
+          });
+        });
+
+        return { ok: true, status: "COMPLETED", amount: amountCredited };
+      } else {
+        return { ok: false, status: result.status };
+      }
+    } catch (err: any) {
+      console.error("PayPal Capture Error:", err);
+      if (err.message && err.message.includes("Credenciales de PayPal")) {
+        throw new HttpsError("failed-precondition", err.message);
+      }
+      // Handle case where order is already captured
+      if (err.statusCode === 422) {
+        return { ok: false, message: "Orden ya procesada o inválida" };
+      }
+      throw new HttpsError("internal", "Error capturando orden PayPal", err);
+    }
+  },
+);
 
 export const ping = onCall(
   { region: "us-central1" },
   (request: CallableRequest) => {
     const { name } = request.data as { name?: string };
     return { ok: true, message: "pong", name: name ?? null };
-  }
+  },
 );
 
 export const acceptRide = onCall(
@@ -39,7 +277,7 @@ export const acceptRide = onCall(
     if (!txn.committed || txn.snapshot.val() !== "assigned") {
       throw new HttpsError(
         "failed-precondition",
-        "Ride request no está disponible"
+        "Ride request no está disponible",
       );
     }
     const reqSnap = await reqRef.get();
@@ -59,14 +297,14 @@ export const acceptRide = onCall(
     if (!userId)
       throw new HttpsError(
         "invalid-argument",
-        "userId faltante en ride request"
+        "userId faltante en ride request",
       );
 
     const driverDoc = await fs.collection("users").doc(driverUid).get();
     if (!driverDoc.exists)
       throw new HttpsError(
         "failed-precondition",
-        "Perfil de conductor no encontrado"
+        "Perfil de conductor no encontrado",
       );
     const d = driverDoc.data() || {};
     const driverName = (d.firstName as string) || "";
@@ -119,7 +357,7 @@ export const acceptRide = onCall(
     await db.ref(`driverAvailability/${driverUid}`).remove();
 
     return { ok: true, currentRideId: rideRequestId };
-  }
+  },
 );
 
 export const processTopup = onDocumentUpdated(
@@ -146,7 +384,7 @@ export const processTopup = onDocumentUpdated(
       });
       return null;
     });
-  }
+  },
 );
 
 export const cancelRide = onCall(
@@ -170,7 +408,7 @@ export const cancelRide = onCall(
     await db.ref(`currentRides/${currentRideId}`).remove();
     if (driverId) await db.ref(`driverAvailability/${driverId}`).remove();
     return { ok: true };
-  }
+  },
 );
 
 export const completeRide = onCall(
@@ -195,7 +433,7 @@ export const completeRide = onCall(
     if (!driverId || uid !== driverId)
       throw new HttpsError(
         "permission-denied",
-        "Solo el conductor puede completar"
+        "Solo el conductor puede completar",
       );
     const price =
       typeof finalPrice === "number" && finalPrice > 0
@@ -255,7 +493,7 @@ export const completeRide = onCall(
     const writes: Promise<any>[] = [];
     if (userId) {
       writes.push(
-        fs.collection("users").doc(userId).collection("trips").add(tripData)
+        fs.collection("users").doc(userId).collection("trips").add(tripData),
       );
     }
     if (driverId) {
@@ -264,7 +502,7 @@ export const completeRide = onCall(
           .collection("users")
           .doc(driverId)
           .collection("services")
-          .add(tripData)
+          .add(tripData),
       );
       // Deduct 10% commission from driver balance
       const commission = price * 0.1;
@@ -274,7 +512,7 @@ export const completeRide = onCall(
           .doc(driverId)
           .update({
             balance: FieldValue.increment(-commission),
-          })
+          }),
       );
     }
     const results = await Promise.all(writes);
@@ -296,7 +534,7 @@ export const completeRide = onCall(
       userId: userId ?? null,
       driverId: driverId ?? null,
     };
-  }
+  },
 );
 
 export const driverArrived = onCall(
@@ -316,13 +554,13 @@ export const driverArrived = onCall(
     if (!driverId || uid !== driverId)
       throw new HttpsError(
         "permission-denied",
-        "Solo el conductor puede marcar llegada"
+        "Solo el conductor puede marcar llegada",
       );
     await db
       .ref(`currentRides/${currentRideId}`)
       .update({ status: "arrived", arrivedAt: { ".sv": "timestamp" } });
     return { ok: true };
-  }
+  },
 );
 
 export const verifyStartCode = onCall(
@@ -349,7 +587,7 @@ export const verifyStartCode = onCall(
     if (status !== "arrived" && status !== "active")
       throw new HttpsError(
         "failed-precondition",
-        "Estado inválido para validación"
+        "Estado inválido para validación",
       );
     const startCode = Number(cur?.startCode ?? 0);
     if (!(startCode >= 1000 && startCode <= 9999))
@@ -367,7 +605,7 @@ export const verifyStartCode = onCall(
       wrongAttempts: 0,
     });
     return { ok: true };
-  }
+  },
 );
 
 export const submitRating = onCall(
@@ -413,7 +651,7 @@ export const submitRating = onCall(
     if (!valid)
       throw new HttpsError(
         "failed-precondition",
-        "Viaje no válido para rating"
+        "Viaje no válido para rating",
       );
     const targetRef = fs.collection("users").doc(targetUserId);
     await fs.runTransaction(async (tx) => {
@@ -460,5 +698,5 @@ export const submitRating = onCall(
       return null;
     });
     return { ok: true };
-  }
+  },
 );
